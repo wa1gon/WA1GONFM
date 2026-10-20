@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wa1gonfm"
+version = "0.1.0"
+description = "WA1GON File Manager"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "WA1GON" }]
+
+[project.scripts]
+wa1gonfm = "wa1gonfm.cli:main"
+
+[tool.setuptools]
+packages = ["wa1gonfm"]

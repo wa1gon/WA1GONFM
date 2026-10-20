@@ -71,3 +71,12 @@ Removed manual named-control declarations and lookups from MainWindow.axaml.cs. 
 - Ctrl+T opens a tab. Drag files from the desktop into the file list to copy.
 - File operation errors are displayed; existing destinations are never silently overwritten.
 - **Caution:** Delete is permanent (no trash integration yet). Drag and drop currently supports importing external files into the active directory; internal drag-to-move is not yet implemented.
+
+## File views (v7)
+
+Use the **Details**, **Icons**, and **Compact** toolbar buttons, or Ctrl+1, Ctrl+2, Ctrl+3.
+Each tab retains its own view choice while open. The Settings window provides the default
+view for new tabs. Icon view automatically previews supported image files (PNG, JPEG,
+BMP, GIF, WebP) with background decoding. There is no separate thumbnail mode.
+
+The three views share file operations and the context menu.

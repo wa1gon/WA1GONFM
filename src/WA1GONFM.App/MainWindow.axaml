@@ -44,11 +44,17 @@
         </TreeView>
       </Grid>
       <GridSplitter Grid.Column="1" Width="5" Background="{DynamicResource FmToolbar}"/>
-      <Grid Grid.Column="2" RowDefinitions="Auto,*" Margin="6,10,10,10">
+      <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*" Margin="6,10,10,10">
         <DockPanel Background="{DynamicResource FmSurface}"><Button Content="+ New Tab" DockPanel.Dock="Right" Click="NewTab_Click"/><TabControl x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged" HorizontalAlignment="Stretch"/></DockPanel>
-        <ListBox Grid.Row="1" x:Name="FilesList" Background="{DynamicResource FmSurface}" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" PointerPressed="Files_PointerPressed" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
-          <ListBox.ContextMenu>
-            <ContextMenu>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,5">
+          <Button Content="Details" Click="DetailsView_Click" ToolTip.Tip="Details (Ctrl+1)"/>
+          <Button Content="Icons" Click="IconView_Click" ToolTip.Tip="Icons with automatic image previews (Ctrl+2)"/>
+          <Button Content="Compact" Click="CompactView_Click" ToolTip.Tip="Compact (Ctrl+3)"/>
+          <TextBlock x:Name="ViewModeLabel" VerticalAlignment="Center" Margin="10,0,0,0"/>
+        </StackPanel>
+        <Grid Grid.Row="2">
+        <Grid.ContextMenu>
+          <ContextMenu>
               <MenuItem Header="Open" Click="OpenSelected_Click"/>
               <MenuItem Header="Open With Default Application" Click="OpenWith_Click"/>
               <Separator/>
@@ -64,9 +70,47 @@
               <MenuItem Header="New Folder" Click="NewFolder_Click"/>
               <MenuItem Header="Refresh" Click="Refresh_Click"/>
               <MenuItem Header="Open Terminal Here" Click="Terminal_Click"/>
-            </ContextMenu>
-          </ListBox.ContextMenu>
+          </ContextMenu>
+        </Grid.ContextMenu>
+        <ListBox x:Name="FilesList" Background="{DynamicResource FmSurface}" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" PointerPressed="Files_PointerPressed" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="32,*,110,120,170" Margin="3,2">
+                <TextBlock Grid.Column="0" Text="{Binding Glyph}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="2" Text="{Binding SizeText}"/>
+                <TextBlock Grid.Column="3" Text="{Binding TypeText}"/>
+                <TextBlock Grid.Column="4" Text="{Binding ModifiedText}"/>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
         </ListBox>
+        <ListBox x:Name="IconFilesList" IsVisible="False" SelectionChanged="ViewSelection_Changed" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Width="112" Margin="7" Spacing="5" HorizontalAlignment="Center">
+                <Grid Width="80" Height="72">
+                  <TextBlock Text="{Binding Glyph}" FontSize="43" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                </Grid>
+                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" TextAlignment="Center" MaxLines="2"/>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <ListBox x:Name="CompactFilesList" IsVisible="False" SelectionChanged="ViewSelection_Changed" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Orientation="Horizontal" Width="220" Spacing="6" Margin="4,2">
+                <TextBlock Text="{Binding Glyph}"/>
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Width="190"/>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        </Grid>
       </Grid>
     </Grid>
   </Grid>

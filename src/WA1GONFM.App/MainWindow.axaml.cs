@@ -10,6 +10,13 @@ namespace WA1GONFM.App;
 public partial class MainWindow : Window
 {
     private readonly DirectoryBrowser _browser = new();
+    private readonly ObservableCollection<FileViewItem> _viewItems = new();
+    private ListBox CurrentFilesList => Active?.ViewMode switch
+    {
+        "Icons" => IconFilesList,
+        "Compact" => CompactFilesList,
+        _ => FilesList
+    };
     private readonly SettingsStore _store = new();
     private readonly TerminalLauncher _terminal = new();
     private readonly FileOperations _operations = new();
@@ -31,8 +38,11 @@ public partial class MainWindow : Window
         DirectoriesToggle.IsChecked = _settings.ShowDirectories;
         DirectoryTree.ItemsSource = new[] { _treeRoot };
         DirectoryTree.AddHandler(TreeViewItem.ExpandedEvent, Tree_Expanded, RoutingStrategies.Bubble);
+        FilesList.ItemsSource = _viewItems;
+        IconFilesList.ItemsSource = _viewItems;
+        CompactFilesList.ItemsSource = _viewItems;
         RefreshShortcuts();
-        _tabs.Add(new NavigationTab(Home));
+        _tabs.Add(new NavigationTab(Home) { ViewMode = _settings.DefaultViewMode });
         _initialized = true;
         RefreshTabs(0);
         AddHandler(KeyDownEvent, Window_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -61,8 +71,10 @@ public partial class MainWindow : Window
         {
             PathBox.Text = Active.CurrentPath;
             var entries = _browser.List(Active.CurrentPath, _settings.ShowHidden, _settings.ShowDirectories);
-            FilesList.ItemsSource = entries.Select(x => (x.IsDirectory ? "📁  " : "📄  ") + x.Name).ToArray();
             _entries = entries;
+            _viewItems.Clear();
+            foreach (var entry in entries) _viewItems.Add(new FileViewItem(entry));
+            ApplyViewMode();
             StatusText.Text = $"{entries.Count} items  •  {Active.CurrentPath}";
             _refreshing = true;
             HomeRootToggle.IsChecked = Active.CurrentPath == "/";
@@ -72,7 +84,7 @@ public partial class MainWindow : Window
         {
             StatusText.Text = ex.Message;
             _entries = Array.Empty<DirectoryEntry>();
-            FilesList.ItemsSource = Array.Empty<string>();
+            _viewItems.Clear();
         }
     }
     private IReadOnlyList<DirectoryEntry> _entries = Array.Empty<DirectoryEntry>();
@@ -94,16 +106,38 @@ public partial class MainWindow : Window
         RefreshFiles();
     }
     private void Tabs_SelectionChanged(object? sender, SelectionChangedEventArgs e) { if (_initialized && !_refreshing) RefreshFiles(); }
-    private void NewTab_Click(object? sender, RoutedEventArgs e) { _tabs.Add(new NavigationTab(Active?.CurrentPath ?? Home)); RefreshTabs(_tabs.Count - 1); }
+    private void NewTab_Click(object? sender, RoutedEventArgs e) { _tabs.Add(new NavigationTab(Active?.CurrentPath ?? Home) { ViewMode = Active?.ViewMode ?? _settings.DefaultViewMode }); RefreshTabs(_tabs.Count - 1); }
     private void CloseTab_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: int index } || index < 0 || index >= _tabs.Count) return;
-        if (_tabs.Count == 1) { _tabs[0] = new NavigationTab(Home); RefreshTabs(0); return; }
+        if (_tabs.Count == 1) { _tabs[0] = new NavigationTab(Home) { ViewMode = _settings.DefaultViewMode }; RefreshTabs(0); return; }
         var selected = Tabs.SelectedIndex;
         _tabs.RemoveAt(index);
         RefreshTabs(Math.Clamp(selected > index ? selected - 1 : selected, 0, _tabs.Count - 1));
     }
-    private string? SelectedEntry => FilesList.SelectedIndex is var i && i >= 0 && i < _entries.Count ? _entries[i].FullPath : null;
+    private string? SelectedEntry => CurrentFilesList.SelectedIndex is var i && i >= 0 && i < _entries.Count ? _entries[i].FullPath : null;
+    private void ApplyViewMode()
+    {
+        var mode = Active?.ViewMode ?? _settings.DefaultViewMode;
+        FilesList.IsVisible = mode == "Details";
+        IconFilesList.IsVisible = mode == "Icons";
+        CompactFilesList.IsVisible = mode == "Compact";
+        ViewModeLabel.Text = mode;
+        if (mode == "Icons")
+            foreach (var item in _viewItems) item.LoadThumbnail();
+    }
+    private void SetViewMode(string mode)
+    {
+        if (Active is null) return;
+        var selected = CurrentFilesList.SelectedIndex;
+        Active.ViewMode = mode;
+        ApplyViewMode();
+        if (selected >= 0 && selected < _viewItems.Count) CurrentFilesList.SelectedIndex = selected;
+    }
+    private void DetailsView_Click(object? sender, RoutedEventArgs e) => SetViewMode("Details");
+    private void IconView_Click(object? sender, RoutedEventArgs e) => SetViewMode("Icons");
+    private void CompactView_Click(object? sender, RoutedEventArgs e) => SetViewMode("Compact");
+    private void ViewSelection_Changed(object? sender, SelectionChangedEventArgs e) { }
     // Tunnel keyboard shortcuts so they work after changing tabs or clicking the background.
     // Do not hijack text editing inside TextBox controls.
     private async void Window_KeyDown(object? sender, KeyEventArgs e)
@@ -114,6 +148,9 @@ public partial class MainWindow : Window
             if (e.Key == Key.C) { CaptureSelection(false); e.Handled = true; }
             else if (e.Key == Key.X) { CaptureSelection(true); e.Handled = true; }
             else if (e.Key == Key.V) { await PasteAsync(); e.Handled = true; }
+            else if (e.Key == Key.D1) { SetViewMode("Details"); e.Handled = true; }
+            else if (e.Key == Key.D2) { SetViewMode("Icons"); e.Handled = true; }
+            else if (e.Key == Key.D3) { SetViewMode("Compact"); e.Handled = true; }
             else if (e.Key == Key.T) { NewTab_Click(null, new RoutedEventArgs()); e.Handled = true; }
         }
         else if (e.Key == Key.Delete)
@@ -233,10 +270,11 @@ public partial class MainWindow : Window
     }
     private void Files_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(FilesList).Properties.IsRightButtonPressed) return;
+        if (!e.GetCurrentPoint(sender as ListBox ?? CurrentFilesList).Properties.IsRightButtonPressed) return;
+        var list = sender as ListBox ?? CurrentFilesList;
         var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
-        if (item is not null) FilesList.SelectedItem = item.DataContext;
-        else FilesList.SelectedIndex = -1;
+        if (item is not null) list.SelectedItem = item.DataContext;
+        else list.SelectedIndex = -1;
     }
     private void OpenSelected_Click(object? sender, RoutedEventArgs e)
     {
@@ -303,7 +341,7 @@ public partial class MainWindow : Window
     }
     private void Files_DoubleTapped(object? sender, TappedEventArgs e)
     {
-        var index = FilesList.SelectedIndex;
+        var index = CurrentFilesList.SelectedIndex;
         if (index >= 0 && index < _entries.Count && _entries[index].IsDirectory) Navigate(_entries[index].FullPath);
     }
     private void Tree_SelectionChanged(object? sender, SelectionChangedEventArgs e)

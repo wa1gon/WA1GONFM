@@ -1,3 +1,17 @@
+# WA1GONFM v6
+
+Changes from v5:
+- File-list right-click context menu (open, open with system default, cut/copy/paste, rename, trash, permanent delete, properties, new folder, refresh, terminal).
+- Window-level keyboard shortcuts work after switching tabs (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+T, F2, Delete, Shift+Delete). TextBox editing retains normal keyboard behavior.
+- Confirmation preferences under Settings, persisted: move off, overwrite on, trash off, permanent delete on.
+- Overwrite support for files and recursive directory copy; copy/move between tabs uses retained internal clipboard selection.
+- Trash uses `gio trash` on Linux, so `gio` must be installed. Permanent delete remains available separately.
+- Fixed UI test `FindControl` namespace import and added core overwrite tests.
+
+**Limitations:** This is an unverified source release: .NET SDK is unavailable in the packaging environment. Clipboard currently works **inside WA1GONFM**, not with other applications. Drag/drop currently supports copying external files into the current directory; advanced intra-app drag/drop is not implemented. Flatpak packaging is **not yet provided** because offline NuGet and sandbox terminal integration need validation. Do not publish to Flathub without validating filesystem permissions and portal integration. Overwriting an existing directory merges copied contents; it is not an atomic replacement. Directory move overwrite replaces the destination directory. Test on disposable data first.
+
+---
+
 # WA1GONFM
 
 Native .NET 10 + Avalonia Linux file manager starter solution. Modern dark Fluent theme, tabs, shortcuts, root directory tree, Home/Root toggle, hidden/folder toggles, and configurable terminal launcher.

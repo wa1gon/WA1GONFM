@@ -1,17 +1,33 @@
 namespace WA1GONFM.Core;
 public sealed class FileOperations
 {
-    public void Copy(string source, string destinationDirectory)
+    public void Copy(string source, string destinationDirectory, bool overwrite = false)
     {
         var destination = Destination(source, destinationDirectory);
-        if (File.Exists(destination) || Directory.Exists(destination)) throw new IOException($"Destination already exists: {destination}");
-        if (Directory.Exists(source)) CopyDirectory(source, destination);
-        else File.Copy(source, destination);
+        if (Path.GetFullPath(source) == Path.GetFullPath(destination)) throw new IOException("Source and destination are the same.");
+        if (Directory.Exists(source))
+        {
+            if (File.Exists(destination)) throw new IOException($"Destination is a file: {destination}");
+            if (Directory.Exists(destination) && !overwrite) throw new IOException($"Destination already exists: {destination}");
+            CopyDirectory(source, destination, overwrite);
+        }
+        else
+        {
+            if (Directory.Exists(destination)) throw new IOException($"Destination is a directory: {destination}");
+            File.Copy(source, destination, overwrite);
+        }
     }
-    public void Move(string source, string destinationDirectory)
+    public void Move(string source, string destinationDirectory, bool overwrite = false)
     {
         var destination = Destination(source, destinationDirectory);
-        if (File.Exists(destination) || Directory.Exists(destination)) throw new IOException($"Destination already exists: {destination}");
+        if (Path.GetFullPath(source) == Path.GetFullPath(destination)) throw new IOException("Source and destination are the same.");
+        if (File.Exists(destination) || Directory.Exists(destination))
+        {
+            if (!overwrite) throw new IOException($"Destination already exists: {destination}");
+            if (Directory.Exists(source) != Directory.Exists(destination)) throw new IOException("Cannot overwrite a file with a directory or vice versa.");
+            if (Directory.Exists(destination)) Directory.Delete(destination, true);
+            else File.Delete(destination);
+        }
         if (Directory.Exists(source)) Directory.Move(source, destination);
         else File.Move(source, destination);
     }
@@ -42,10 +58,15 @@ public sealed class FileOperations
         if (Directory.Exists(source)) Directory.Move(source, dest);
         else File.Move(source, dest);
     }
-    private static void CopyDirectory(string source, string destination)
+    private static void CopyDirectory(string source, string destination, bool overwrite)
     {
         Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source)) File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
-        foreach (var sub in Directory.EnumerateDirectories(source)) CopyDirectory(sub, Path.Combine(destination, Path.GetFileName(sub)));
+        foreach (var file in Directory.EnumerateFiles(source))
+        {
+            var target = Path.Combine(destination, Path.GetFileName(file));
+            File.Copy(file, target, overwrite);
+        }
+        foreach (var sub in Directory.EnumerateDirectories(source))
+            CopyDirectory(sub, Path.Combine(destination, Path.GetFileName(sub)), overwrite);
     }
 }

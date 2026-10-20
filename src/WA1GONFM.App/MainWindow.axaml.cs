@@ -2,6 +2,9 @@ using Avalonia.Input;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
+using Avalonia.VisualTree;
+using Avalonia.Controls;
+using System.Diagnostics;
 using System.Threading.Tasks;
 namespace WA1GONFM.App;
 public partial class MainWindow : Window
@@ -14,6 +17,7 @@ public partial class MainWindow : Window
     private bool _clipboardCut;
     private readonly AppSettings _settings;
     private readonly ObservableCollection<NavigationTab> _tabs = new();
+    private readonly DirectoryTreeNode _treeRoot = new("/");
     private bool _refreshing;
     private bool _initialized;
     private string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -25,11 +29,13 @@ public partial class MainWindow : Window
         ThemeManager.Apply(_settings.Theme);
         HiddenToggle.IsChecked = _settings.ShowHidden;
         DirectoriesToggle.IsChecked = _settings.ShowDirectories;
-        DirectoryTree.ItemsSource = new[] { new DirectoryTreeNode("/") };
+        DirectoryTree.ItemsSource = new[] { _treeRoot };
+        DirectoryTree.AddHandler(TreeViewItem.ExpandedEvent, Tree_Expanded, RoutingStrategies.Bubble);
         RefreshShortcuts();
         _tabs.Add(new NavigationTab(Home));
         _initialized = true;
         RefreshTabs(0);
+        AddHandler(KeyDownEvent, Window_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
     private void RefreshTabs(int selected)
     {
@@ -98,41 +104,81 @@ public partial class MainWindow : Window
         RefreshTabs(Math.Clamp(selected > index ? selected - 1 : selected, 0, _tabs.Count - 1));
     }
     private string? SelectedEntry => FilesList.SelectedIndex is var i && i >= 0 && i < _entries.Count ? _entries[i].FullPath : null;
-    private async void Files_KeyDown(object? sender, KeyEventArgs e)
+    // Tunnel keyboard shortcuts so they work after changing tabs or clicking the background.
+    // Do not hijack text editing inside TextBox controls.
+    private async void Window_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Handled || e.Source is TextBox) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            if (e.Key == Key.C || e.Key == Key.X)
-            {
-                _clipboardPath = SelectedEntry;
-                _clipboardCut = e.Key == Key.X;
-                if (_clipboardPath is not null) StatusText.Text = $"{(_clipboardCut ? "Move" : "Copy")}: {_clipboardPath}";
-                e.Handled = true;
-            }
+            if (e.Key == Key.C) { CaptureSelection(false); e.Handled = true; }
+            else if (e.Key == Key.X) { CaptureSelection(true); e.Handled = true; }
             else if (e.Key == Key.V) { await PasteAsync(); e.Handled = true; }
             else if (e.Key == Key.T) { NewTab_Click(null, new RoutedEventArgs()); e.Handled = true; }
         }
-        else if (e.Key == Key.Delete) { await DeleteSelectedAsync(); e.Handled = true; }
+        else if (e.Key == Key.Delete)
+        {
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) await DeleteSelectedAsync(true);
+            else await DeleteSelectedAsync(false);
+            e.Handled = true;
+        }
         else if (e.Key == Key.F2) { await RenameSelectedAsync(); e.Handled = true; }
+    }
+    private void Files_KeyDown(object? sender, KeyEventArgs e) { /* Handled by the window tunnel. */ }
+    private void CaptureSelection(bool cut)
+    {
+        _clipboardPath = SelectedEntry;
+        _clipboardCut = cut;
+        if (_clipboardPath is not null)
+            StatusText.Text = $"{(cut ? "Cut" : "Copied")}: {_clipboardPath}";
     }
     private async Task PasteAsync()
     {
         if (_clipboardPath is null || Active is null) return;
+        var source = _clipboardPath;
+        var target = Path.Combine(Active.CurrentPath, Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar)));
         try
         {
-            if (_clipboardCut) { _operations.Move(_clipboardPath, Active.CurrentPath); _clipboardPath = null; }
-            else _operations.Copy(_clipboardPath, Active.CurrentPath);
+            if (Path.GetFullPath(source) == Path.GetFullPath(target))
+            {
+                StatusText.Text = "Source and destination are the same.";
+                return;
+            }
+            var exists = File.Exists(target) || Directory.Exists(target);
+            if (_clipboardCut && _settings.ConfirmMove &&
+                !await ConfirmAsync("Move", $"Move '{Path.GetFileName(source)}' to '{Active.CurrentPath}'?", "Move")) return;
+            if (exists && _settings.ConfirmOverwrite &&
+                !await ConfirmAsync("Overwrite", $"Replace existing '{target}'?", "Replace")) return;
+            if (_clipboardCut)
+            {
+                _operations.Move(source, Active.CurrentPath, overwrite: exists);
+                _clipboardPath = null;
+            }
+            else _operations.Copy(source, Active.CurrentPath, overwrite: exists);
             RefreshFiles();
+            InvalidateTreeFor(source, target);
+            StatusText.Text = $"{(_clipboardCut ? "Copied" : "Pasted")}: {target}";
         }
-        catch (Exception ex) { await ShowMessageAsync("File operation failed", ex.Message); }
+        catch (Exception ex) { await ShowMessageAsync("Paste failed", ex.Message); }
     }
-    private async Task DeleteSelectedAsync()
+    private async Task DeleteSelectedAsync(bool permanent)
     {
         var path = SelectedEntry;
         if (path is null) return;
-        if (!await ConfirmAsync("Delete permanently?", $"Delete '{Path.GetFileName(path)}' and its contents? This cannot be undone.")) return;
-        try { _operations.Delete(path); RefreshFiles(); }
-        catch (Exception ex) { await ShowMessageAsync("Delete failed", ex.Message); }
+        if (permanent)
+        {
+            if (_settings.ConfirmPermanentDelete &&
+                !await ConfirmAsync("Delete permanently", $"Permanently delete '{Path.GetFileName(path)}'? This cannot be undone.", "Delete")) return;
+            try { _operations.Delete(path); RefreshFiles(); InvalidateTreeFor(path); }
+            catch (Exception ex) { await ShowMessageAsync("Delete failed", ex.Message); }
+        }
+        else
+        {
+            if (_settings.ConfirmTrash &&
+                !await ConfirmAsync("Move to Trash", $"Move '{Path.GetFileName(path)}' to Trash?", "Trash")) return;
+            try { await TrashService.MoveToTrashAsync(path); RefreshFiles(); InvalidateTreeFor(path); }
+            catch (Exception ex) { await ShowMessageAsync("Trash failed", ex.Message); }
+        }
     }
     private async Task RenameSelectedAsync()
     {
@@ -146,13 +192,13 @@ public partial class MainWindow : Window
         cancel.Click += (_, _) => dialog.Close(false);
         dialog.Content = new StackPanel { Margin = new Thickness(16), Spacing = 10, Children = { nameBox, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { ok, cancel } } } };
         if (!await dialog.ShowDialog<bool>(this)) return;
-        try { _operations.Rename(path, nameBox.Text ?? ""); RefreshFiles(); }
+        try { _operations.Rename(path, nameBox.Text ?? ""); RefreshFiles(); InvalidateTreeFor(path, Path.Combine(Path.GetDirectoryName(path)!, nameBox.Text ?? "")); }
         catch (Exception ex) { await ShowMessageAsync("Rename failed", ex.Message); }
     }
-    private async Task<bool> ConfirmAsync(string title, string message)
+    private async Task<bool> ConfirmAsync(string title, string message, string action = "OK")
     {
         var dialog = new Window { Title = title, Width = 450, Height = 175, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        var yes = new Button { Content = "Delete" };
+        var yes = new Button { Content = action };
         var no = new Button { Content = "Cancel" };
         yes.Click += (_, _) => dialog.Close(true);
         no.Click += (_, _) => dialog.Close(false);
@@ -183,6 +229,77 @@ public partial class MainWindow : Window
             catch (Exception ex) { await ShowMessageAsync("Drop failed", ex.Message); }
         }
         RefreshFiles();
+        InvalidateTreeFor(Active.CurrentPath);
+    }
+    private void Files_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(FilesList).Properties.IsRightButtonPressed) return;
+        var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
+        if (item is not null) FilesList.SelectedItem = item.DataContext;
+        else FilesList.SelectedIndex = -1;
+    }
+    private void OpenSelected_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = SelectedEntry;
+        if (path is null) return;
+        if (Directory.Exists(path)) Navigate(path);
+        else OpenExternal(path);
+    }
+    private void OpenWith_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedEntry is { } path) OpenExternal(path);
+    }
+    private void OpenExternal(string path)
+    {
+        try
+        {
+            var info = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
+            info.ArgumentList.Add(path);
+            Process.Start(info);
+        }
+        catch (Exception ex) { StatusText.Text = ex.Message; }
+    }
+    private void Cut_Click(object? sender, RoutedEventArgs e) => CaptureSelection(true);
+    private void Copy_Click(object? sender, RoutedEventArgs e) => CaptureSelection(false);
+    private async void Paste_Click(object? sender, RoutedEventArgs e) => await PasteAsync();
+    private async void Rename_Click(object? sender, RoutedEventArgs e) => await RenameSelectedAsync();
+    private async void Trash_Click(object? sender, RoutedEventArgs e) => await DeleteSelectedAsync(false);
+    private async void PermanentDelete_Click(object? sender, RoutedEventArgs e) => await DeleteSelectedAsync(true);
+    private void Refresh_Click(object? sender, RoutedEventArgs e)
+    {
+        RefreshFiles();
+        if (Active is not null) InvalidateTreeFor(Active.CurrentPath);
+    }
+    private async void Properties_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedEntry is not { } path) return;
+        try
+        {
+            var info = new FileInfo(path);
+            var directory = Directory.Exists(path);
+            var details = $"Path: {path}\nType: {(directory ? "Directory" : "File")}\n" +
+                (directory ? "" : $"Size: {info.Length:N0} bytes\n") +
+                $"Modified: {(directory ? Directory.GetLastWriteTime(path) : info.LastWriteTime)}";
+            await ShowMessageAsync("Properties", details);
+        }
+        catch (Exception ex) { await ShowMessageAsync("Properties", ex.Message); }
+    }
+    private async void NewFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        if (Active is null) return;
+        var input = new TextBox { Watermark = "Folder name", Width = 320 };
+        var dialog = new Window { Title = "New folder", Width = 400, Height = 160, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var create = new Button { Content = "Create" };
+        var cancel = new Button { Content = "Cancel" };
+        create.Click += (_, _) => dialog.Close(true);
+        cancel.Click += (_, _) => dialog.Close(false);
+        dialog.Content = new StackPanel { Margin = new Thickness(16), Spacing = 10,
+            Children = { input, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { create, cancel } } } };
+        if (!await dialog.ShowDialog<bool>(this)) return;
+        var name = input.Text;
+        if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.Contains('/') || name.Contains('\\')) return;
+        try { Directory.CreateDirectory(Path.Combine(Active.CurrentPath, name)); RefreshFiles(); InvalidateTreeFor(Active.CurrentPath); }
+        catch (Exception ex) { await ShowMessageAsync("New folder failed", ex.Message); }
     }
     private void Files_DoubleTapped(object? sender, TappedEventArgs e)
     {
@@ -191,8 +308,40 @@ public partial class MainWindow : Window
     }
     private void Tree_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_initialized && DirectoryTree.SelectedItem is DirectoryTreeNode node) { node.LoadChildren(); Navigate(node.Path); }
+        if (_initialized && DirectoryTree.SelectedItem is DirectoryTreeNode { IsReal: true } node) Navigate(node.Path);
     }
+    private async void Tree_Expanded(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is not TreeViewItem { DataContext: DirectoryTreeNode { IsReal: true } node }) return;
+        // Expansion, not selection, triggers enumeration.
+        await node.LoadChildrenAsync();
+    }
+
+    private void InvalidateTreeFor(params string[] paths)
+    {
+        foreach (var path in paths)
+        {
+            var parent = System.IO.Path.GetDirectoryName(path.TrimEnd('/'));
+            if (string.IsNullOrEmpty(parent)) parent = "/";
+            var node = _treeRoot.FindLoaded(path);
+            node?.Invalidate();
+            var parentNode = _treeRoot.FindLoaded(parent);
+            parentNode?.Invalidate();
+            // Refresh only expanded nodes. Collapsed nodes reload on their next expansion.
+            if (parentNode is not null && IsNodeExpanded(parentNode))
+                _ = parentNode.LoadChildrenAsync();
+            if (node is not null && IsNodeExpanded(node))
+                _ = node.LoadChildrenAsync();
+        }
+    }
+
+    private bool IsNodeExpanded(DirectoryTreeNode node)
+    {
+        return DirectoryTree.GetVisualDescendants()
+            .OfType<TreeViewItem>()
+            .Any(item => ReferenceEquals(item.DataContext, node) && item.IsExpanded);
+    }
+
     private void RefreshShortcuts()
     {
         var defaults = new[] { Home, Path.Combine(Home, "Downloads"), Path.Combine(Home, "Documents") };

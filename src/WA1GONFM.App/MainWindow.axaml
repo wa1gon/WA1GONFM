@@ -35,13 +35,38 @@
         <ListBox Grid.Row="1" x:Name="ShortcutsList" DoubleTapped="Shortcut_DoubleTapped"/>
         <TextBlock Grid.Row="2" Text="DIRECTORIES  /" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" Margin="0,12,0,8"/>
         <TreeView Grid.Row="3" x:Name="DirectoryTree" SelectionChanged="Tree_SelectionChanged">
+          <TreeView.Styles>
+            <Style Selector="TreeViewItem">
+              <Setter Property="IsVisible" Value="{Binding IsReal}"/>
+            </Style>
+          </TreeView.Styles>
           <TreeView.ItemTemplate><TreeDataTemplate ItemsSource="{Binding Children}"><TextBlock Text="{Binding Name}"/></TreeDataTemplate></TreeView.ItemTemplate>
         </TreeView>
       </Grid>
       <GridSplitter Grid.Column="1" Width="5" Background="{DynamicResource FmToolbar}"/>
       <Grid Grid.Column="2" RowDefinitions="Auto,*" Margin="6,10,10,10">
         <DockPanel Background="{DynamicResource FmSurface}"><Button Content="+ New Tab" DockPanel.Dock="Right" Click="NewTab_Click"/><TabControl x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged" HorizontalAlignment="Stretch"/></DockPanel>
-        <ListBox Grid.Row="1" x:Name="FilesList" Background="{DynamicResource FmSurface}" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver"/>
+        <ListBox Grid.Row="1" x:Name="FilesList" Background="{DynamicResource FmSurface}" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" PointerPressed="Files_PointerPressed" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+          <ListBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Open" Click="OpenSelected_Click"/>
+              <MenuItem Header="Open With Default Application" Click="OpenWith_Click"/>
+              <Separator/>
+              <MenuItem Header="Cut" Click="Cut_Click"/>
+              <MenuItem Header="Copy" Click="Copy_Click"/>
+              <MenuItem Header="Paste" Click="Paste_Click"/>
+              <MenuItem Header="Rename" Click="Rename_Click"/>
+              <Separator/>
+              <MenuItem Header="Move to Trash" Click="Trash_Click"/>
+              <MenuItem Header="Delete Permanently" Click="PermanentDelete_Click"/>
+              <MenuItem Header="Properties" Click="Properties_Click"/>
+              <Separator/>
+              <MenuItem Header="New Folder" Click="NewFolder_Click"/>
+              <MenuItem Header="Refresh" Click="Refresh_Click"/>
+              <MenuItem Header="Open Terminal Here" Click="Terminal_Click"/>
+            </ContextMenu>
+          </ListBox.ContextMenu>
+        </ListBox>
       </Grid>
     </Grid>
   </Grid>

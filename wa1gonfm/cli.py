@@ -1,22 +1,20 @@
 from __future__ import annotations
 
 import argparse
-import os
 
 from .manager import FileManager
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="WA1GON File Manager")
-    parser.add_argument("--root", default=os.getcwd(), help="Root directory the manager should operate on")
+    parser.add_argument("--root", default=None, help="Root directory the manager should operate on")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     ls_parser = subparsers.add_parser("ls", help="List the current directory")
     ls_parser.add_argument("path", nargs="?", default=".", help="Directory to list")
     ls_parser.add_argument("--all", action="store_true", help="Include hidden files")
 
-    pwd_parser = subparsers.add_parser("pwd", help="Print working directory")
-    _ = pwd_parser
+    subparsers.add_parser("pwd", help="Print working directory")
     cd_parser = subparsers.add_parser("cd", help="Change working directory")
     cd_parser.add_argument("path")
 
@@ -51,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
 
     command = args.command
     if command == "ls":
-        items = manager.list(args.path, include_hidden=args.all)
+        items = manager.ls(args.path, include_hidden=args.all)
         for item in items:
             suffix = "/" if item.is_dir else ""
             print(f"{item.name}{suffix}")
@@ -90,8 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             print(line)
         return 0
 
-    parser.error(f"Unsupported command: {command}")
-    return 2
+    raise AssertionError(f"Unhandled command: {command}")
 
 
 if __name__ == "__main__":

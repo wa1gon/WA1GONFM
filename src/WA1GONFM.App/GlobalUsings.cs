@@ -1,0 +1,9 @@
+global using System;
+global using System.IO;
+global using System.Linq;
+global using System.Collections.ObjectModel;
+global using Avalonia;
+global using Avalonia.Controls;
+global using Avalonia.Interactivity;
+global using WA1GONFM.Core;
+global using WA1GONFM.Infrastructure;

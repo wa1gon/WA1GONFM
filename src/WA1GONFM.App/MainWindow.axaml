@@ -1,0 +1,48 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="WA1GONFM" Width="1120" Height="720" MinWidth="750" MinHeight="480">
+  <Window.Styles>
+    <Style Selector="TabItem">
+      <Setter Property="Background" Value="{DynamicResource FmInactiveTab}"/>
+      <Setter Property="Foreground" Value="{DynamicResource FmText}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource FmAccent}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="13,7"/>
+      <Setter Property="Margin" Value="2,2,3,0"/>
+    </Style>
+    <Style Selector="TabItem:selected">
+      <Setter Property="Background" Value="{DynamicResource FmActiveTab}"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="BorderThickness" Value="2,2,2,0"/>
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="Auto,Auto,*" Background="{DynamicResource FmBackground}">
+    <Border Grid.Row="0" Background="{DynamicResource FmToolbar}" Padding="10">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="←" Click="Back_Click" ToolTip.Tip="Back"/>
+        <Button Content="→" Click="Forward_Click" ToolTip.Tip="Forward"/>
+        <Button Content="↑" Click="Up_Click" ToolTip.Tip="Parent folder"/>
+        <ToggleButton x:Name="HomeRootToggle" Content="Home / Root" Checked="HomeRoot_Changed" Unchecked="HomeRoot_Changed" ToolTip.Tip="Switch active tab between Home and /"/>
+        <TextBox x:Name="PathBox" Width="310" Watermark="Directory path" KeyDown="PathBox_KeyDown"/>
+        <ToggleButton x:Name="HiddenToggle" Content="Hidden" Checked="Filters_Changed" Unchecked="Filters_Changed"/>
+        <ToggleButton x:Name="DirectoriesToggle" Content="Folders" IsChecked="True" Checked="Filters_Changed" Unchecked="Filters_Changed"/>
+        <Button Content="Terminal" Click="Terminal_Click"/>
+        <Button Content="Settings" Click="Settings_Click"/>
+      </StackPanel>
+    </Border>
+    <Border Grid.Row="1" Background="{DynamicResource FmSurface}" Padding="8,5"><TextBlock x:Name="StatusText" Foreground="{DynamicResource FmText}" Text="Ready"/></Border>
+    <Grid Grid.Row="2" ColumnDefinitions="260,5,*">
+      <Grid Grid.Column="0" RowDefinitions="Auto,155,Auto,*" Margin="10,10,4,10">
+        <DockPanel><TextBlock Text="SHORTCUTS" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" VerticalAlignment="Center"/><Button Content="+" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="AddShortcut_Click"/></DockPanel>
+        <ListBox Grid.Row="1" x:Name="ShortcutsList" DoubleTapped="Shortcut_DoubleTapped"/>
+        <TextBlock Grid.Row="2" Text="DIRECTORIES  /" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" Margin="0,12,0,8"/>
+        <TreeView Grid.Row="3" x:Name="DirectoryTree" SelectionChanged="Tree_SelectionChanged">
+          <TreeView.ItemTemplate><TreeDataTemplate ItemsSource="{Binding Children}"><TextBlock Text="{Binding Name}"/></TreeDataTemplate></TreeView.ItemTemplate>
+        </TreeView>
+      </Grid>
+      <GridSplitter Grid.Column="1" Width="5" Background="{DynamicResource FmToolbar}"/>
+      <Grid Grid.Column="2" RowDefinitions="Auto,*" Margin="6,10,10,10">
+        <DockPanel Background="{DynamicResource FmSurface}"><Button Content="+ New Tab" DockPanel.Dock="Right" Click="NewTab_Click"/><TabControl x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged" HorizontalAlignment="Stretch"/></DockPanel>
+        <ListBox Grid.Row="1" x:Name="FilesList" Background="{DynamicResource FmSurface}" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver"/>
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

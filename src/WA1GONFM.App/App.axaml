@@ -1,0 +1,27 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.App" RequestedThemeVariant="Default">
+  <Application.Styles><FluentTheme /></Application.Styles>
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="FmBackground" Color="#F5F7FA"/>
+          <SolidColorBrush x:Key="FmToolbar" Color="#E7ECF4"/>
+          <SolidColorBrush x:Key="FmSurface" Color="#FFFFFF"/>
+          <SolidColorBrush x:Key="FmAccent" Color="#145AA2"/>
+          <SolidColorBrush x:Key="FmText" Color="#243247"/>
+          <SolidColorBrush x:Key="FmInactiveTab" Color="#D6DFEB"/>
+          <SolidColorBrush x:Key="FmActiveTab" Color="#FFFFFF"/>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="FmBackground" Color="#151A22"/>
+          <SolidColorBrush x:Key="FmToolbar" Color="#222B38"/>
+          <SolidColorBrush x:Key="FmSurface" Color="#1B2430"/>
+          <SolidColorBrush x:Key="FmAccent" Color="#8DBBEA"/>
+          <SolidColorBrush x:Key="FmText" Color="#DCE6F3"/>
+          <SolidColorBrush x:Key="FmInactiveTab" Color="#293548"/>
+          <SolidColorBrush x:Key="FmActiveTab" Color="#405875"/>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

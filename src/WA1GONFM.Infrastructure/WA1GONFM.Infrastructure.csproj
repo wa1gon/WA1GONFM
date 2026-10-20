@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../WA1GONFM.Core/WA1GONFM.Core.csproj" /></ItemGroup></Project>

@@ -3,3 +3,4 @@
 .idea/
 .vs/
 TestResults/
+*.pdb

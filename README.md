@@ -102,3 +102,16 @@ Drag-and-drop in both directions with Nemo and internal drag-and-drop were confi
 The repository and solution remain `WA1GONFM`; the user-facing application name and published executable are `filepilot`. Existing settings paths and C# namespaces are intentionally preserved for compatibility. See [FILEPILOT-RENAME.md](FILEPILOT-RENAME.md) for migration details.
 
 Earlier release notes are retained in Git history; this README describes the current v0.7.13 package rather than older scaffold limitations.
+
+## Application icon and desktop launcher
+
+The blue folder-and-compass icon is embedded in the Avalonia window and included as
+`src/WA1GONFM.App/Assets/filepilot-256.png` (other sizes also provided).
+Running `./scripts/build-install.sh [INSTALL_DIRECTORY]` also installs the icon to
+`~/.local/share/icons/hicolor/256x256/apps/filepilot.png` and creates a user
+desktop launcher at `~/.local/share/applications/filepilot.desktop`.
+The desktop launcher uses the chosen installation directory. You may need to
+refresh the Cinnamon menu or log out and back in for the icon to appear.
+
+`.gitignore` excludes all `*.pdb` files. Already tracked PDB files must be
+removed from Git's index separately (`git rm --cached <path>`).

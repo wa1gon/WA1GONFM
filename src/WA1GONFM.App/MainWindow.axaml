@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="filepilot" DragDrop.AllowDrop="True" Width="1120" Height="720" MinWidth="750" MinHeight="480">
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="filepilot" Icon="avares://filepilot/Assets/filepilot-256.png" DragDrop.AllowDrop="True" Width="1120" Height="720" MinWidth="750" MinHeight="480">
   <Window.Styles>
     <Style Selector="TabItem">
       <Setter Property="Background" Value="{DynamicResource FmInactiveTab}"/>

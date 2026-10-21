@@ -37,7 +37,7 @@ public sealed class LinuxFileLauncher
 
     public bool CanExecute(string path)
     {
-        if (!File.Exists(path) || Directory.Exists(path)) return false;
+        if (!OperatingSystem.IsLinux() || !File.Exists(path) || Directory.Exists(path)) return false;
         var mode = File.GetUnixFileMode(path);
         var anyExecuteBit = (mode & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
         return anyExecuteBit && Access(path, XOk) == 0;

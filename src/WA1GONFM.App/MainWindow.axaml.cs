@@ -4,6 +4,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using System.Diagnostics;
 using System.Threading.Tasks;
 namespace WA1GONFM.App;
@@ -26,6 +27,12 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly ObservableCollection<NavigationTab> _tabs = new();
     private readonly DirectoryTreeNode _treeRoot = new("/");
+    private Avalonia.Point? _dragStart;
+    private ListBox? _dragSource;
+    private FileViewItem? _pressedDragItem;
+    private bool _dragging;
+    private TabItem? _hoverTab;
+    private DateTime _hoverTabSince;
     private bool _refreshing;
     private bool _initialized;
     private string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -42,6 +49,9 @@ public partial class MainWindow : Window
         FilesList.ItemsSource = _viewItems;
         IconFilesList.ItemsSource = _viewItems;
         CompactFilesList.ItemsSource = _viewItems;
+        // Receive pointer movement even when a ListBoxItem handles the routed event.
+        foreach (var fileList in new[] { FilesList, IconFilesList, CompactFilesList })
+            fileList.AddHandler(PointerMovedEvent, Files_PointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         RefreshShortcuts();
         _tabs.Add(new NavigationTab(Home) { ViewMode = _settings.DefaultViewMode });
         _initialized = true;
@@ -144,10 +154,17 @@ public partial class MainWindow : Window
     private async void Window_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled || e.Source is TextBox) return;
+        // Delete in the sidebar removes only a custom shortcut, never its target.
+        if (e.Key == Key.Delete && IsShortcutFocus(e.Source))
+        {
+            RemoveSelectedShortcut();
+            e.Handled = true;
+            return;
+        }
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            if (e.Key == Key.C) { CaptureSelection(false); e.Handled = true; }
-            else if (e.Key == Key.X) { CaptureSelection(true); e.Handled = true; }
+            if (e.Key == Key.C) { await CaptureSelectionAsync(false); e.Handled = true; }
+            else if (e.Key == Key.X) { await CaptureSelectionAsync(true); e.Handled = true; }
             else if (e.Key == Key.V) { await PasteAsync(); e.Handled = true; }
             else if (e.Key == Key.D1) { SetViewMode("Details"); e.Handled = true; }
             else if (e.Key == Key.D2) { SetViewMode("Icons"); e.Handled = true; }
@@ -163,41 +180,116 @@ public partial class MainWindow : Window
         else if (e.Key == Key.F2) { await RenameSelectedAsync(); e.Handled = true; }
     }
     private void Files_KeyDown(object? sender, KeyEventArgs e) { /* Handled by the window tunnel. */ }
-    private void CaptureSelection(bool cut)
+    private async Task CaptureSelectionAsync(bool cut)
     {
-        _clipboardPath = SelectedEntry;
-        _clipboardCut = cut;
-        if (_clipboardPath is not null)
-            StatusText.Text = $"{(cut ? "Cut" : "Copied")}: {_clipboardPath}";
-    }
-    private async Task PasteAsync()
-    {
-        if (_clipboardPath is null || Active is null) return;
-        var source = _clipboardPath;
-        var target = Path.Combine(Active.CurrentPath, Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar)));
+        var source = SelectedEntry;
+        if (source is null) return; // Do not discard a valid clipboard on empty selection.
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) { StatusText.Text = "System clipboard unavailable."; return; }
         try
         {
-            if (Path.GetFullPath(source) == Path.GetFullPath(target))
-            {
-                StatusText.Text = "Source and destination are the same.";
-                return;
-            }
-            var exists = File.Exists(target) || Directory.Exists(target);
-            if (_clipboardCut && _settings.ConfirmMove &&
-                !await ConfirmAsync("Move", $"Move '{Path.GetFileName(source)}' to '{Active.CurrentPath}'?", "Move")) return;
-            if (exists && _settings.ConfirmOverwrite &&
-                !await ConfirmAsync("Overwrite", $"Replace existing '{target}'?", "Replace")) return;
-            if (_clipboardCut)
-            {
-                _operations.Move(source, Active.CurrentPath, overwrite: exists);
-                _clipboardPath = null;
-            }
-            else _operations.Copy(source, Active.CurrentPath, overwrite: exists);
-            RefreshFiles();
-            InvalidateTreeFor(source, target);
-            StatusText.Text = $"{(_clipboardCut ? "Copied" : "Pasted")}: {target}";
+            var uri = new Uri(Path.GetFullPath(source));
+            var data = new DataObject();
+            // Clipboard is not drag-and-drop: Avalonia's DataFormats.Files can be
+            // exported as an empty/unsupported GFile to GTK/Nemo. Publish only
+            // well-formed URI text targets here. Dragging still uses Files.
+            data.Set("text/uri-list", uri.AbsoluteUri + "\r\n");
+            data.Set("x-special/gnome-copied-files", (cut ? "cut\n" : "copy\n") + uri.AbsoluteUri);
+            await clipboard.SetDataObjectAsync(data);
+            _clipboardPath = source;
+            _clipboardCut = cut;
+            StatusText.Text = $"{(cut ? "Cut" : "Copied")}: {source}";
         }
-        catch (Exception ex) { await ShowMessageAsync("Paste failed", ex.Message); }
+        catch (Exception ex) { StatusText.Text = $"Clipboard failed: {ex.Message}"; }
+    }
+
+    private async Task<(string[] Paths, bool Cut)> ReadClipboardFilesAsync()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return (Array.Empty<string>(), false);
+        var formats = await clipboard.GetFormatsAsync();
+        var cut = false;
+        var paths = new List<string>();
+        if (formats.Contains("x-special/gnome-copied-files"))
+        {
+            var raw = await clipboard.GetDataAsync("x-special/gnome-copied-files") as string;
+            if (raw is not null)
+            {
+                cut = raw.StartsWith("cut\n", StringComparison.OrdinalIgnoreCase);
+                paths.AddRange(ParseFileUris(raw));
+            }
+        }
+        if (paths.Count == 0 && formats.Contains("text/uri-list"))
+        {
+            var raw = await clipboard.GetDataAsync("text/uri-list") as string;
+            if (raw is not null) paths.AddRange(ParseFileUris(raw));
+        }
+        if (paths.Count == 0 && formats.Contains(DataFormats.Files))
+        {
+            var files = await clipboard.GetDataAsync(DataFormats.Files) as IEnumerable<IStorageItem>;
+            if (files is not null)
+                paths.AddRange(files.Where(f => f.Path.IsFile).Select(f => f.Path.LocalPath));
+        }
+        return (paths.Distinct(StringComparer.Ordinal).ToArray(), cut);
+    }
+
+    private static IEnumerable<string> ParseFileUris(string raw)
+    {
+        foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith('#') || line is "copy" or "cut") continue;
+            if (Uri.TryCreate(line, UriKind.Absolute, out var uri) && uri.IsFile)
+                yield return uri.LocalPath;
+        }
+    }
+
+    private async Task PasteAsync()
+    {
+        if (Active is null) return;
+        string[] sources;
+        bool cut;
+        try
+        {
+            (sources, cut) = await ReadClipboardFilesAsync();
+        }
+        catch (Exception ex) { StatusText.Text = $"Clipboard read failed: {ex.Message}"; return; }
+        if (sources.Length == 0)
+        {
+            StatusText.Text = "Clipboard contains no files.";
+            return;
+        }
+        var destination = Active.CurrentPath;
+        var completed = 0;
+        foreach (var source in sources)
+        {
+            var target = Path.Combine(destination, Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar)));
+            try
+            {
+                if (Path.GetFullPath(source) == Path.GetFullPath(target)) continue;
+                var exists = File.Exists(target) || Directory.Exists(target);
+                if (cut && _settings.ConfirmMove &&
+                    !await ConfirmAsync("Move", $"Move '{Path.GetFileName(source)}' to '{destination}'?", "Move")) continue;
+                if (exists && _settings.ConfirmOverwrite &&
+                    !await ConfirmAsync("Overwrite", $"Replace existing '{target}'?", "Replace")) continue;
+                if (cut) _operations.Move(source, destination, overwrite: exists);
+                else _operations.Copy(source, destination, overwrite: exists);
+                completed++;
+                InvalidateTreeFor(source, target);
+            }
+            catch (Exception ex) { await ShowMessageAsync("Paste failed", ex.Message); }
+        }
+        if (completed > 0)
+        {
+            RefreshFiles();
+            StatusText.Text = $"{(cut ? "Moved" : "Copied")} {completed} item(s) to {destination}";
+            if (cut && completed == sources.Length)
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard is not null) await clipboard.ClearAsync();
+                _clipboardPath = null;
+                _clipboardCut = false;
+            }
+        }
     }
     private async Task DeleteSelectedAsync(bool permanent)
     {
@@ -251,28 +343,163 @@ public partial class MainWindow : Window
         dialog.Content = new StackPanel { Margin = new Thickness(16), Spacing = 12, Children = { new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }, ok } };
         await dialog.ShowDialog(this);
     }
+    // Avalonia's standard Files data format carries file:// URIs across Linux applications.
+    // No shell command or application-specific data format is required.
+    private async void Files_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_dragging || _dragStart is null || sender is not ListBox list || !ReferenceEquals(list, _dragSource)) return;
+        if (!e.GetCurrentPoint(list).Properties.IsLeftButtonPressed) { _dragStart = null; return; }
+        var p = e.GetPosition(list);
+        if (Math.Abs(p.X - _dragStart.Value.X) < 7 && Math.Abs(p.Y - _dragStart.Value.Y) < 7) return;
+        _dragStart = null;
+        // Selection can change during pointer movement; keep the item that was pressed.
+        var selected = list.SelectedItems?.OfType<FileViewItem>().Select(i => i.Entry.FullPath).Distinct().ToArray()
+            ?? Array.Empty<string>();
+        if (_pressedDragItem is { } pressed && !selected.Contains(pressed.Entry.FullPath))
+            selected = new[] { pressed.Entry.FullPath };
+        if (selected.Length == 0 && SelectedEntry is { } path) selected = new[] { path };
+        if (selected.Length == 0) return;
+        _dragging = true;
+        try
+        {
+            var items = new List<IStorageItem>();
+            foreach (var sourcePath in selected)
+            {
+                var uri = new Uri(Path.GetFullPath(sourcePath));
+                IStorageItem? item = Directory.Exists(sourcePath)
+                    ? await StorageProvider.TryGetFolderFromPathAsync(uri)
+                    : await StorageProvider.TryGetFileFromPathAsync(uri);
+                if (item is not null) items.Add(item);
+            }
+            if (items.Count == 0) return;
+            var data = new DataObject();
+            data.Set(DataFormats.Files, items.ToArray());
+            // GTK/Nemo interoperates with URI lists; provide them in addition to
+            // Avalonia's native file format for cross-application drags.
+            var uriList = string.Join("\r\n", selected.Select(path => new Uri(Path.GetFullPath(path)).AbsoluteUri)) + "\r\n";
+            data.Set("text/uri-list", uriList);
+            data.Set("x-special/gnome-copied-files", "copy\n" + string.Join("\n", selected.Select(path => new Uri(Path.GetFullPath(path)).AbsoluteUri)));
+            data.Set("application/x-wa1gonfm-files", "1");
+            await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy | DragDropEffects.Move);
+        }
+        catch (Exception ex) { StatusText.Text = $"Drag failed: {ex.Message}"; }
+        finally { _dragging = false; _hoverTab = null; _pressedDragItem = null; }
+    }
+
+    private void Files_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        _dragStart = null;
+        _pressedDragItem = null;
+    }
+
     private void Files_DragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.Data.GetFiles()?.Any() == true ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = GetDroppedPaths(e).Length > 0 ? ChooseDropEffect(e) : DragDropEffects.None;
     }
+
+    private static string[] GetDroppedPaths(DragEventArgs e)
+    {
+        var native = e.Data.GetFiles()?.Select(file => file.Path.LocalPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path)) ?? Enumerable.Empty<string>();
+        var paths = new List<string>(native);
+        foreach (var format in new[] { "text/uri-list", "x-special/gnome-copied-files" })
+        {
+            if (e.Data.Get(format) is not string raw) continue;
+            foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (line.StartsWith('#') || line is "copy" or "cut") continue;
+                if (Uri.TryCreate(line, UriKind.Absolute, out var uri) && uri.IsFile)
+                    paths.Add(uri.LocalPath);
+            }
+        }
+        return paths.Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    private static DragDropEffects ChooseDropEffect(DragEventArgs e)
+    {
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) return DragDropEffects.Copy;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return DragDropEffects.Move;
+        // WA1GONFM drags default to move; external drags default to copy.
+        return e.Data.Get("application/x-wa1gonfm-files") is not null
+            ? DragDropEffects.Move : DragDropEffects.Copy;
+    }
+
     private async void Files_Drop(object? sender, DragEventArgs e)
     {
         if (Active is null) return;
-        var files = e.Data.GetFiles()?.ToArray();
-        if (files is null || files.Length == 0) return;
-        foreach (var item in files)
+        await ImportDropAsync(e, Active.CurrentPath);
+    }
+
+    private async Task ImportDropAsync(DragEventArgs e, string destination)
+    {
+        var paths = GetDroppedPaths(e);
+        if (paths.Length == 0) return;
+        var move = ChooseDropEffect(e) == DragDropEffects.Move;
+        foreach (var source in paths)
         {
-            var source = item.Path.LocalPath;
-            try { _operations.Copy(source, Active.CurrentPath); }
-            catch (Exception ex) { await ShowMessageAsync("Drop failed", ex.Message); }
+            var target = Path.Combine(destination, Path.GetFileName(source.TrimEnd('/')));
+            if (Path.GetFullPath(source) == Path.GetFullPath(target)) continue;
+            var exists = File.Exists(target) || Directory.Exists(target);
+            if (move && _settings.ConfirmMove &&
+                !await ConfirmAsync("Move", $"Move '{Path.GetFileName(source)}' to '{destination}'?", "Move")) continue;
+            if (exists && _settings.ConfirmOverwrite &&
+                !await ConfirmAsync("Overwrite", $"Replace '{target}'?", "Replace")) continue;
+            try
+            {
+                if (move)
+                {
+                    try { _operations.Move(source, destination, overwrite: exists); }
+                    catch (IOException ex) when (!exists && (ex.HResult & 0xffff) == 18)
+                    {
+                        // Directory.Move/File.Move may fail with EXDEV across filesystems.
+                        // Copy first; delete the source only after the copy completes.
+                        _operations.Copy(source, destination);
+                        _operations.Delete(source);
+                    }
+                }
+                else _operations.Copy(source, destination, overwrite: exists);
+                InvalidateTreeFor(source, target);
+            }
+            catch (Exception ex) { await ShowMessageAsync("Drop failed", $"{source}\n{ex.Message}"); }
         }
         RefreshFiles();
-        InvalidateTreeFor(Active.CurrentPath);
     }
+
+    // A dragged file can be dropped on a tab header. Hovering also activates the tab
+    // after a short delay, allowing a subsequent drop into its file view.
+    private void Tabs_DragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = GetDroppedPaths(e).Length > 0 ? ChooseDropEffect(e) : DragDropEffects.None;
+        var tab = (e.Source as Avalonia.Visual)?.FindAncestorOfType<TabItem>();
+        if (tab is null) return;
+        if (!ReferenceEquals(tab, _hoverTab)) { _hoverTab = tab; _hoverTabSince = DateTime.UtcNow; }
+        else if ((DateTime.UtcNow - _hoverTabSince).TotalMilliseconds > 450 && !tab.IsSelected)
+            Tabs.SelectedItem = tab;
+    }
+
+    private async void Tabs_Drop(object? sender, DragEventArgs e)
+    {
+        var tab = (e.Source as Avalonia.Visual)?.FindAncestorOfType<TabItem>();
+        if (tab is null) return;
+        var index = Tabs.Items.Cast<object>().ToList().IndexOf(tab);
+        if (index < 0 || index >= _tabs.Count) return;
+        Tabs.SelectedIndex = index;
+        await ImportDropAsync(e, _tabs[index].CurrentPath);
+    }
+
     private void Files_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(sender as ListBox ?? CurrentFilesList).Properties.IsRightButtonPressed) return;
         var list = sender as ListBox ?? CurrentFilesList;
+        var point = e.GetCurrentPoint(list);
+        if (point.Properties.IsLeftButtonPressed)
+        {
+            _dragStart = e.GetPosition(list);
+            _dragSource = list;
+            _pressedDragItem = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>()?.DataContext as FileViewItem;
+            if (_pressedDragItem is null) _dragStart = null;
+            return;
+        }
+        if (!point.Properties.IsRightButtonPressed) return;
         var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
         if (item is not null) list.SelectedItem = item.DataContext;
         else list.SelectedIndex = -1;
@@ -316,8 +543,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { await ShowMessageAsync("Open With failed", ex.Message); }
     }
-    private void Cut_Click(object? sender, RoutedEventArgs e) => CaptureSelection(true);
-    private void Copy_Click(object? sender, RoutedEventArgs e) => CaptureSelection(false);
+    private async void Cut_Click(object? sender, RoutedEventArgs e) => await CaptureSelectionAsync(true);
+    private async void Copy_Click(object? sender, RoutedEventArgs e) => await CaptureSelectionAsync(false);
     private async void Paste_Click(object? sender, RoutedEventArgs e) => await PasteAsync();
     private async void Rename_Click(object? sender, RoutedEventArgs e) => await RenameSelectedAsync();
     private async void Trash_Click(object? sender, RoutedEventArgs e) => await DeleteSelectedAsync(false);
@@ -350,6 +577,12 @@ public partial class MainWindow : Window
         var cancel = new Button { Content = "Cancel" };
         create.Click += (_, _) => dialog.Close(true);
         cancel.Click += (_, _) => dialog.Close(false);
+        input.KeyDown += (_, args) =>
+        {
+            if (args.Key == Key.Enter) { args.Handled = true; dialog.Close(true); }
+            else if (args.Key == Key.Escape) { args.Handled = true; dialog.Close(false); }
+        };
+        dialog.Opened += (_, _) => input.Focus();
         dialog.Content = new StackPanel { Margin = new Thickness(16), Spacing = 10,
             Children = { input, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { create, cancel } } } };
         if (!await dialog.ShowDialog<bool>(this)) return;
@@ -409,6 +642,33 @@ public partial class MainWindow : Window
     {
         if (ShortcutsList.SelectedIndex is var i && i >= 0 && i < _shortcuts.Length) Navigate(_shortcuts[i]);
     }
+    private bool IsShortcutFocus(object? source) =>
+        source is Avalonia.Visual visual &&
+        (ReferenceEquals(visual, ShortcutsList) ||
+         ReferenceEquals(visual.FindAncestorOfType<ListBox>(), ShortcutsList));
+
+    private void Shortcut_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(ShortcutsList).Properties.IsRightButtonPressed) return;
+        var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
+        ShortcutsList.SelectedItem = item?.DataContext;
+    }
+
+    private void RemoveShortcut_Click(object? sender, RoutedEventArgs e) => RemoveSelectedShortcut();
+
+    private void RemoveSelectedShortcut()
+    {
+        if (ShortcutsList.SelectedItem is not string path) return;
+        if (!ShortcutService.Remove(_settings, path, Home))
+        {
+            StatusText.Text = "Built-in shortcuts cannot be removed.";
+            return;
+        }
+        _store.Save(_settings);
+        RefreshShortcuts();
+        StatusText.Text = $"Removed shortcut: {path}";
+    }
+
     private void AddShortcut_Click(object? sender, RoutedEventArgs e)
     {
         if (Active is null || _settings.Shortcuts.Contains(Active.CurrentPath)) return;

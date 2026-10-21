@@ -3,6 +3,6 @@
 Run WA1GONFM before this script. This is a real desktop check, not a mock.
 """
 from dogtail.tree import root
-app = root.application('WA1GONFM')
-assert app is not None, 'WA1GONFM window not found'
-print('PASS: WA1GONFM is visible to AT-SPI')
+app = root.application('filepilot')
+assert app is not None, 'filepilot window not found'
+print('PASS: filepilot is visible to AT-SPI')

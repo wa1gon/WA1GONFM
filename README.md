@@ -1,3 +1,9 @@
+# filepilot
+
+See [FILEPILOT-RENAME.md](FILEPILOT-RENAME.md) for current build instructions and changes.
+
+## Historical development notes
+
 # WA1GONFM v6
 
 Changes from v5:

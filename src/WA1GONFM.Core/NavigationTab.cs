@@ -1,6 +1,8 @@
 namespace WA1GONFM.Core;
 public sealed class NavigationTab
 {
+    public string ViewMode { get; set; } = "Details";
+
     private readonly List<string> _history = new();
     private int _position = -1;
     public string CurrentPath => _position >= 0 ? _history[_position] : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

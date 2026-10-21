@@ -33,14 +33,10 @@ public sealed class SettingsWindow : Window
         var confirmOverwrite = new CheckBox { Content = "Confirm overwriting existing files", IsChecked = settings.ConfirmOverwrite };
         var confirmTrash = new CheckBox { Content = "Confirm moving to Trash", IsChecked = settings.ConfirmTrash };
         var confirmPermanent = new CheckBox { Content = "Confirm permanent deletion", IsChecked = settings.ConfirmPermanentDelete };
-        confirmMove.Checked += (_, _) => { settings.ConfirmMove = true; store.Save(settings); };
-        confirmMove.Unchecked += (_, _) => { settings.ConfirmMove = false; store.Save(settings); };
-        confirmOverwrite.Checked += (_, _) => { settings.ConfirmOverwrite = true; store.Save(settings); };
-        confirmOverwrite.Unchecked += (_, _) => { settings.ConfirmOverwrite = false; store.Save(settings); };
-        confirmTrash.Checked += (_, _) => { settings.ConfirmTrash = true; store.Save(settings); };
-        confirmTrash.Unchecked += (_, _) => { settings.ConfirmTrash = false; store.Save(settings); };
-        confirmPermanent.Checked += (_, _) => { settings.ConfirmPermanentDelete = true; store.Save(settings); };
-        confirmPermanent.Unchecked += (_, _) => { settings.ConfirmPermanentDelete = false; store.Save(settings); };
+        confirmMove.IsCheckedChanged += (_, _) => { settings.ConfirmMove = confirmMove.IsChecked == true; store.Save(settings); };
+        confirmOverwrite.IsCheckedChanged += (_, _) => { settings.ConfirmOverwrite = confirmOverwrite.IsChecked == true; store.Save(settings); };
+        confirmTrash.IsCheckedChanged += (_, _) => { settings.ConfirmTrash = confirmTrash.IsChecked == true; store.Save(settings); };
+        confirmPermanent.IsCheckedChanged += (_, _) => { settings.ConfirmPermanentDelete = confirmPermanent.IsChecked == true; store.Save(settings); };
         Content = new ScrollViewer { Content = new StackPanel { Margin = new Thickness(20), Spacing = 8, Children =
         {
             new TextBlock { Text = "Theme (System follows desktop preference)" }, theme,

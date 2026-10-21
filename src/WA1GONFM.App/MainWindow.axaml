@@ -24,6 +24,7 @@
         <TextBox x:Name="PathBox" Width="310" Watermark="Directory path" KeyDown="PathBox_KeyDown"/>
         <ToggleButton x:Name="HiddenToggle" Content="Hidden" Checked="Filters_Changed" Unchecked="Filters_Changed"/>
         <ToggleButton x:Name="DirectoriesToggle" Content="Folders" IsChecked="True" Checked="Filters_Changed" Unchecked="Filters_Changed"/>
+        <Button Content="New Folder" Click="NewFolder_Click" ToolTip.Tip="Create directory in active tab"/>
         <Button Content="Terminal" Click="Terminal_Click"/>
         <Button Content="Settings" Click="Settings_Click"/>
       </StackPanel>
@@ -56,7 +57,7 @@
         <Grid.ContextMenu>
           <ContextMenu>
               <MenuItem Header="Open" Click="OpenSelected_Click"/>
-              <MenuItem Header="Open With Default Application" Click="OpenWith_Click"/>
+              <MenuItem Header="Open With..." Click="OpenWith_Click"/>
               <Separator/>
               <MenuItem Header="Cut" Click="Cut_Click"/>
               <MenuItem Header="Copy" Click="Copy_Click"/>

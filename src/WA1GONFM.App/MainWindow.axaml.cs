@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     };
     private readonly SettingsStore _store = new();
     private readonly TerminalLauncher _terminal = new();
+    private readonly LinuxFileLauncher _launcher = new();
     private readonly FileOperations _operations = new();
     private string? _clipboardPath;
     private bool _clipboardCut;
@@ -276,26 +277,44 @@ public partial class MainWindow : Window
         if (item is not null) list.SelectedItem = item.DataContext;
         else list.SelectedIndex = -1;
     }
-    private void OpenSelected_Click(object? sender, RoutedEventArgs e)
+    private async void OpenSelected_Click(object? sender, RoutedEventArgs e)
     {
-        var path = SelectedEntry;
-        if (path is null) return;
-        if (Directory.Exists(path)) Navigate(path);
-        else OpenExternal(path);
+        if (SelectedEntry is { } path) await OpenPathAsync(path);
     }
-    private void OpenWith_Click(object? sender, RoutedEventArgs e)
+    private async Task OpenPathAsync(string path)
     {
-        if (SelectedEntry is { } path) OpenExternal(path);
+        if (Directory.Exists(path)) { Navigate(path); return; }
+        try { _launcher.Open(path); }
+        catch (NotSupportedException) { await ShowOpenWithDialogAsync(path); }
+        catch (Exception ex) { await ShowMessageAsync("Open failed", ex.Message); }
     }
-    private void OpenExternal(string path)
+    private async void OpenWith_Click(object? sender, RoutedEventArgs e)
     {
+        if (SelectedEntry is { } path && File.Exists(path)) await ShowOpenWithDialogAsync(path);
+    }
+    private async Task ShowOpenWithDialogAsync(string path)
+    {
+        var appBox = new TextBox { Watermark = "Application executable (e.g. xed, code, /usr/bin/evince)", Width = 430 };
+        var dialog = new Window { Title = $"Open With: {Path.GetFileName(path)}", Width = 520, Height = 210,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var open = new Button { Content = "Open With" };
+        var defaultApp = new Button { Content = "Use Default" };
+        var cancel = new Button { Content = "Cancel" };
+        open.Click += (_, _) => dialog.Close(1);
+        defaultApp.Click += (_, _) => dialog.Close(2);
+        cancel.Click += (_, _) => dialog.Close(0);
+        dialog.Content = new StackPanel { Margin = new Thickness(16), Spacing = 12,
+            Children = { new TextBlock { Text = "Choose a program to open this file. The file is passed as one argument." },
+                appBox, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
+                    Children = { open, defaultApp, cancel } } } };
+        var choice = await dialog.ShowDialog<int>(this);
+        if (choice == 0) return;
         try
         {
-            var info = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
-            info.ArgumentList.Add(path);
-            Process.Start(info);
+            if (choice == 2) _launcher.OpenWith("xdg-open", path);
+            else _launcher.OpenWith(appBox.Text ?? "", path);
         }
-        catch (Exception ex) { StatusText.Text = ex.Message; }
+        catch (Exception ex) { await ShowMessageAsync("Open With failed", ex.Message); }
     }
     private void Cut_Click(object? sender, RoutedEventArgs e) => CaptureSelection(true);
     private void Copy_Click(object? sender, RoutedEventArgs e) => CaptureSelection(false);
@@ -339,10 +358,9 @@ public partial class MainWindow : Window
         try { Directory.CreateDirectory(Path.Combine(Active.CurrentPath, name)); RefreshFiles(); InvalidateTreeFor(Active.CurrentPath); }
         catch (Exception ex) { await ShowMessageAsync("New folder failed", ex.Message); }
     }
-    private void Files_DoubleTapped(object? sender, TappedEventArgs e)
+    private async void Files_DoubleTapped(object? sender, TappedEventArgs e)
     {
-        var index = CurrentFilesList.SelectedIndex;
-        if (index >= 0 && index < _entries.Count && _entries[index].IsDirectory) Navigate(_entries[index].FullPath);
+        if (SelectedEntry is { } path) await OpenPathAsync(path);
     }
     private void Tree_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {

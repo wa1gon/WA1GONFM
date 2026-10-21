@@ -5,7 +5,7 @@ public sealed class MainWindowTests
     public void WindowHasExpectedTitle()
     {
         var window = new MainWindow();
-        Assert.Equal("WA1GONFM", window.Title);
+        Assert.Equal("filepilot v0.7.13", window.Title);
         Assert.NotNull(window.FindControl<Avalonia.Controls.Primitives.ToggleButton>("HiddenToggle"));
         Assert.NotNull(window.FindControl<Avalonia.Controls.TabControl>("Tabs"));
         window.Close();

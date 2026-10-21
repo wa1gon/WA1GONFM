@@ -44,6 +44,10 @@ public partial class MainWindow : Window
     {
         _settings = _store.Load();
         InitializeComponent();
+        var appVersion = typeof(MainWindow).Assembly.GetName().Version;
+        Title = appVersion is null
+            ? "filepilot"
+            : $"filepilot v{appVersion.Major}.{appVersion.Minor}.{appVersion.Build}";
         ThemeManager.Apply(_settings.Theme);
         HiddenToggle.IsChecked = _settings.ShowHidden;
         DirectoriesToggle.IsChecked = _settings.ShowDirectories;

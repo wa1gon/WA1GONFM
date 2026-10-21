@@ -40,7 +40,7 @@
     <Grid Grid.Row="2" ColumnDefinitions="260,5,*">
       <Grid Grid.Column="0" RowDefinitions="Auto,155,Auto,*" Margin="10,10,4,10">
         <DockPanel><TextBlock Text="SHORTCUTS" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" VerticalAlignment="Center"/><Button Content="+" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="AddShortcut_Click" ToolTip.Tip="Add shortcut"/></DockPanel>
-        <ListBox Grid.Row="1" x:Name="ShortcutsList" DoubleTapped="Shortcut_DoubleTapped" PointerPressed="Shortcut_PointerPressed">
+        <ListBox Grid.Row="1" x:Name="ShortcutsList" Tapped="Shortcut_Tapped" DoubleTapped="Shortcut_DoubleTapped" PointerPressed="Shortcut_PointerPressed">
           <ListBox.ContextMenu>
             <ContextMenu><MenuItem Header="Remove Shortcut" Click="RemoveShortcut_Click"/></ContextMenu>
           </ListBox.ContextMenu>
@@ -84,7 +84,7 @@
               <MenuItem Header="Open Terminal Here" Click="Terminal_Click"/>
           </ContextMenu>
         </Grid.ContextMenu>
-        <ListBox x:Name="FilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" PointerPressed="Files_PointerPressed" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <ListBox x:Name="FilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" PointerPressed="Files_PointerPressed" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemTemplate>
             <DataTemplate>
               <Grid ColumnDefinitions="32,*,110,120,170" Margin="3,2">
@@ -97,7 +97,7 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <ListBox x:Name="IconFilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <ListBox x:Name="IconFilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
             <DataTemplate>
@@ -111,7 +111,7 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <ListBox x:Name="CompactFilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <ListBox x:Name="CompactFilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
             <DataTemplate>

@@ -52,12 +52,30 @@ public partial class MainWindow : Window
         // Receive pointer movement even when a ListBoxItem handles the routed event.
         foreach (var fileList in new[] { FilesList, IconFilesList, CompactFilesList })
             fileList.AddHandler(PointerMovedEvent, Files_PointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        // Handle wheel input consistently in the file views and sidebar, including
+        // the icon WrapPanel, whose default scrolling behavior can vary by theme.
+        foreach (var pane in new Avalonia.Controls.Control[] { FilesList, IconFilesList, CompactFilesList, DirectoryTree, ShortcutsList })
+            pane.AddHandler(PointerWheelChangedEvent, Pane_PointerWheelChanged, RoutingStrategies.Tunnel, handledEventsToo: true);
         RefreshShortcuts();
         _tabs.Add(new NavigationTab(Home) { ViewMode = _settings.DefaultViewMode });
         _initialized = true;
         RefreshTabs(0);
         AddHandler(KeyDownEvent, Window_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
+    private void Pane_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+        var scroll = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ScrollViewer>()
+            ?? (sender as Avalonia.Visual)?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+        if (scroll is null) return;
+        var horizontal = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        var delta = horizontal ? (e.Delta.X != 0 ? e.Delta.X : e.Delta.Y) : e.Delta.Y;
+        var nextX = horizontal ? Math.Clamp(scroll.Offset.X - delta * 48, 0, Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width)) : scroll.Offset.X;
+        var nextY = horizontal ? scroll.Offset.Y : Math.Clamp(scroll.Offset.Y - delta * 48, 0, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
+        scroll.Offset = new Vector(nextX, nextY);
+        e.Handled = true;
+    }
+
     private void RefreshTabs(int selected)
     {
         _refreshing = true;
@@ -212,7 +230,7 @@ public partial class MainWindow : Window
         var paths = new List<string>();
         if (formats.Contains("x-special/gnome-copied-files"))
         {
-            var raw = await clipboard.GetDataAsync("x-special/gnome-copied-files") as string;
+            var raw = DecodeClipboardText(await clipboard.GetDataAsync("x-special/gnome-copied-files"));
             if (raw is not null)
             {
                 cut = raw.StartsWith("cut\n", StringComparison.OrdinalIgnoreCase);
@@ -221,7 +239,7 @@ public partial class MainWindow : Window
         }
         if (paths.Count == 0 && formats.Contains("text/uri-list"))
         {
-            var raw = await clipboard.GetDataAsync("text/uri-list") as string;
+            var raw = DecodeClipboardText(await clipboard.GetDataAsync("text/uri-list"));
             if (raw is not null) paths.AddRange(ParseFileUris(raw));
         }
         if (paths.Count == 0 && formats.Contains(DataFormats.Files))
@@ -230,8 +248,19 @@ public partial class MainWindow : Window
             if (files is not null)
                 paths.AddRange(files.Where(f => f.Path.IsFile).Select(f => f.Path.LocalPath));
         }
+        if (paths.Count == 0 && _clipboardPath is { } ownPath && (File.Exists(ownPath) || Directory.Exists(ownPath)))
+            return (new[] { ownPath }, _clipboardCut);
         return (paths.Distinct(StringComparer.Ordinal).ToArray(), cut);
     }
+
+    // GTK clipboard targets can arrive as UTF-8 bytes rather than a managed string.
+    private static string? DecodeClipboardText(object? data) => data switch
+    {
+        string text => text,
+        byte[] bytes => System.Text.Encoding.UTF8.GetString(bytes).TrimEnd('\0'),
+        System.IO.MemoryStream stream => System.Text.Encoding.UTF8.GetString(stream.ToArray()).TrimEnd('\0'),
+        _ => null
+    };
 
     private static IEnumerable<string> ParseFileUris(string raw)
     {
@@ -591,9 +620,17 @@ public partial class MainWindow : Window
         try { Directory.CreateDirectory(Path.Combine(Active.CurrentPath, name)); RefreshFiles(); InvalidateTreeFor(Active.CurrentPath); }
         catch (Exception ex) { await ShowMessageAsync("New folder failed", ex.Message); }
     }
+    private async void Files_Tapped(object? sender, TappedEventArgs e)
+    {
+        if (_settings.ClickMode != "Single" || _dragging) return;
+        var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
+        if (item?.DataContext is FileViewItem entry) await OpenPathAsync(entry.Entry.FullPath);
+    }
     private async void Files_DoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (SelectedEntry is { } path) await OpenPathAsync(path);
+        if (_settings.ClickMode != "Double") return;
+        if ((e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>()?.DataContext is FileViewItem entry)
+            await OpenPathAsync(entry.Entry.FullPath);
     }
     private void Tree_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -638,9 +675,15 @@ public partial class MainWindow : Window
         ShortcutsList.ItemsSource = _shortcuts;
     }
     private string[] _shortcuts = Array.Empty<string>();
+    private void Shortcut_Tapped(object? sender, TappedEventArgs e)
+    {
+        if (_settings.ClickMode != "Single") return;
+        if ((e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>()?.DataContext is string path)
+            Navigate(path);
+    }
     private void Shortcut_DoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (ShortcutsList.SelectedIndex is var i && i >= 0 && i < _shortcuts.Length) Navigate(_shortcuts[i]);
+        if (_settings.ClickMode == "Double" && ShortcutsList.SelectedIndex is var i && i >= 0 && i < _shortcuts.Length) Navigate(_shortcuts[i]);
     }
     private bool IsShortcutFocus(object? source) =>
         source is Avalonia.Visual visual &&

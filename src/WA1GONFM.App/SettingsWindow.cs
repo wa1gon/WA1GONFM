@@ -18,6 +18,12 @@ public sealed class SettingsWindow : Window
             settings.DefaultViewMode = defaultView.SelectedItem as string ?? "Details";
             store.Save(settings);
         };
+        var clickMode = new ComboBox { ItemsSource = new[] { "Single", "Double" }, SelectedItem = settings.ClickMode };
+        clickMode.SelectionChanged += (_, _) =>
+        {
+            settings.ClickMode = clickMode.SelectedItem as string ?? "Single";
+            store.Save(settings);
+        };
         var executable = new TextBox { Text = settings.TerminalExecutable, Watermark = "e.g. xfce4-terminal" };
         var arguments = new TextBox { Text = settings.TerminalArguments, Watermark = "Optional command-line arguments" };
         var save = new Button { Content = "Save", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
@@ -41,6 +47,7 @@ public sealed class SettingsWindow : Window
         {
             new TextBlock { Text = "Theme (System follows desktop preference)" }, theme,
             new TextBlock { Text = "Default file view (new tabs)" }, defaultView,
+            new TextBlock { Text = "Open files and folders with" }, clickMode,
             new TextBlock { Text = "Confirmations", FontWeight = Avalonia.Media.FontWeight.Bold },
             confirmMove, confirmOverwrite, confirmTrash, confirmPermanent,
             new TextBlock { Text = "Preferred terminal executable" }, executable,

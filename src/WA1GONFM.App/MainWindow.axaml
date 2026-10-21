@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="WA1GONFM" Width="1120" Height="720" MinWidth="750" MinHeight="480">
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="WA1GONFM" DragDrop.AllowDrop="True" Width="1120" Height="720" MinWidth="750" MinHeight="480">
   <Window.Styles>
     <Style Selector="TabItem">
       <Setter Property="Background" Value="{DynamicResource FmInactiveTab}"/>
@@ -14,20 +14,20 @@
       <Setter Property="BorderThickness" Value="2,2,2,0"/>
     </Style>
   </Window.Styles>
-  <Grid RowDefinitions="Auto,Auto,*" Background="{DynamicResource FmBackground}">
+  <Grid RowDefinitions="Auto,Auto,*" Background="{DynamicResource FmBackground}" DragDrop.AllowDrop="True" DragDrop.DragOver="Files_DragOver" DragDrop.Drop="Files_Drop">
     <Border Grid.Row="0" Background="{DynamicResource FmToolbar}" Padding="10">
       <StackPanel Orientation="Horizontal" Spacing="8">
         <Button Click="Back_Click" ToolTip.Tip="Back (Alt+Left)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M15 18 9 12 15 6 M9 12 H21" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
         <Button Click="Forward_Click" ToolTip.Tip="Forward (Alt+Right)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M9 18 15 12 9 6 M15 12 H3" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
         <Button Click="Up_Click" ToolTip.Tip="Parent folder"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M18 15 12 9 6 15 M12 9 V21" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
-        <ToggleButton x:Name="HomeRootToggle" Checked="HomeRoot_Changed" Unchecked="HomeRoot_Changed" ToolTip.Tip="Switch between Home and filesystem root">
+        <ToggleButton x:Name="HomeRootToggle" IsCheckedChanged="HomeRoot_Changed" ToolTip.Tip="Switch between Home and filesystem root">
           <StackPanel Orientation="Horizontal" Spacing="5"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 10 12 3 21 10 M5 9 V21 H19 V9 M9 21 V14 H15 V21" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox><TextBlock Text="/" VerticalAlignment="Center"/></StackPanel>
         </ToggleButton>
-        <TextBox x:Name="PathBox" Width="310" Watermark="Directory path" KeyDown="PathBox_KeyDown"/>
-        <ToggleButton x:Name="HiddenToggle" Checked="Filters_Changed" Unchecked="Filters_Changed" ToolTip.Tip="Show hidden files">
+        <TextBox x:Name="PathBox" Width="310" PlaceholderText="Directory path" KeyDown="PathBox_KeyDown"/>
+        <ToggleButton x:Name="HiddenToggle" IsCheckedChanged="Filters_Changed" ToolTip.Tip="Show hidden files">
           <Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M2 12 S6 5 12 5 S22 12 22 12 S18 19 12 19 S2 12 2 12 M10 12 A2 2 0 1 0 14 12 A2 2 0 1 0 10 12" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox>
         </ToggleButton>
-        <ToggleButton x:Name="DirectoriesToggle" IsChecked="True" Checked="Filters_Changed" Unchecked="Filters_Changed" ToolTip.Tip="Show directories">
+        <ToggleButton x:Name="DirectoriesToggle" IsChecked="True" IsCheckedChanged="Filters_Changed" ToolTip.Tip="Show directories">
           <Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 7 V19 H21 V7 H12 L10 4 H3 Z" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox>
         </ToggleButton>
         <Button Click="NewFolder_Click" ToolTip.Tip="New folder"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 7 V19 H21 V7 H12 L10 4 H3 Z M12 10 V17 M8.5 13.5 H15.5" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
@@ -46,7 +46,7 @@
           </ListBox.ContextMenu>
         </ListBox>
         <TextBlock Grid.Row="2" Text="DIRECTORIES  /" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" Margin="0,12,0,8"/>
-        <TreeView Grid.Row="3" x:Name="DirectoryTree" SelectionChanged="Tree_SelectionChanged">
+        <TreeView Grid.Row="3" DragDrop.AllowDrop="True" DragDrop.DragOver="Tree_DragOver" DragDrop.Drop="Tree_Drop" x:Name="DirectoryTree" SelectionChanged="Tree_SelectionChanged">
           <TreeView.Styles>
             <Style Selector="TreeViewItem">
               <Setter Property="IsVisible" Value="{Binding IsReal}"/>
@@ -62,6 +62,10 @@
           <Button Click="DetailsView_Click" ToolTip.Tip="Details (Ctrl+1)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M4 5 H20 M4 10 H20 M4 15 H20 M4 20 H20" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
           <Button Click="IconView_Click" ToolTip.Tip="Icons with automatic image previews (Ctrl+2)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 3 H10 V10 H3 Z M14 3 H21 V10 H14 Z M3 14 H10 V21 H3 Z M14 14 H21 V21 H14 Z" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
           <Button Click="CompactView_Click" ToolTip.Tip="Compact (Ctrl+3)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 4 H10 V8 H3 Z M14 4 H21 V8 H14 Z M3 11 H10 V15 H3 Z M14 11 H21 V15 H14 Z M3 18 H10 V22 H3 Z M14 18 H21 V22 H14 Z" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
+          <TextBlock Text="Sort:" VerticalAlignment="Center" Margin="12,0,0,0"/>
+          <ComboBox x:Name="SortBy" Width="135" SelectionChanged="Sort_Changed"/>
+          <CheckBox x:Name="SortDescending" Content="Descending" VerticalAlignment="Center" IsCheckedChanged="Sort_Changed"/>
+          <CheckBox x:Name="FoldersFirst" Content="Folders first" VerticalAlignment="Center" IsCheckedChanged="Sort_Changed"/>
           <TextBlock x:Name="ViewModeLabel" VerticalAlignment="Center" Margin="10,0,0,0"/>
         </StackPanel>
         <Grid Grid.Row="2">
@@ -84,7 +88,14 @@
               <MenuItem Header="Open Terminal Here" Click="Terminal_Click"/>
           </ContextMenu>
         </Grid.ContextMenu>
-        <ListBox x:Name="FilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" PointerPressed="Files_PointerPressed" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <Grid RowDefinitions="Auto,*" IsVisible="True" x:Name="DetailsContainer">
+          <Grid Grid.Row="0" ColumnDefinitions="32,*,110,120,170" Margin="3,2">
+            <Button Grid.Column="1" Content="Name" Tag="Name" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="SortHeader_Click"/>
+            <Button Grid.Column="2" Content="Size" Tag="Size" Click="SortHeader_Click"/>
+            <Button Grid.Column="3" Content="Type" Tag="Type" Click="SortHeader_Click"/>
+            <Button Grid.Column="4" Content="Modified" Tag="Date modified" Click="SortHeader_Click"/>
+          </Grid>
+        <ListBox Grid.Row="1" x:Name="FilesList" SelectionMode="Multiple" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemTemplate>
             <DataTemplate>
               <Grid ColumnDefinitions="32,*,110,120,170" Margin="3,2">
@@ -97,7 +108,8 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <ListBox x:Name="IconFilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        </Grid>
+        <ListBox x:Name="IconFilesList" SelectionMode="Multiple" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
             <DataTemplate>
@@ -111,7 +123,7 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <ListBox x:Name="CompactFilesList" SelectionMode="Multiple" PointerMoved="Files_PointerMoved" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" PointerPressed="Files_PointerPressed" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <ListBox x:Name="CompactFilesList" SelectionMode="Multiple" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
             <DataTemplate>

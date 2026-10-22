@@ -1,3 +1,4 @@
+using System.Threading;
 using Avalonia.Input;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input.Platform;
@@ -12,6 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly DirectoryBrowser _browser = new();
     private readonly ObservableCollection<FileViewItem> _viewItems = new();
+    private CancellationTokenSource? _integrityScan;
     private ListBox CurrentFilesList => Active?.ViewMode switch
     {
         "Icons" => IconFilesList,
@@ -40,7 +42,9 @@ public partial class MainWindow : Window
     private bool _initialized;
     private string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private NavigationTab? Active => Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < _tabs.Count ? _tabs[Tabs.SelectedIndex] : null;
-    public MainWindow(string? startupDirectory = null)
+    public MainWindow() : this(null) { }
+
+    public MainWindow(string? startupDirectory)
     {
         _settings = _store.Load();
         InitializeComponent();
@@ -66,7 +70,7 @@ public partial class MainWindow : Window
         // the icon WrapPanel, whose default scrolling behavior can vary by theme.
         foreach (var pane in new Avalonia.Controls.Control[] { FilesList, IconFilesList, CompactFilesList, DirectoryTree, ShortcutsList })
             pane.AddHandler(PointerWheelChangedEvent, Pane_PointerWheelChanged, RoutingStrategies.Tunnel, handledEventsToo: true);
-        SortBy.ItemsSource = new[] { "Name", "Size", "Type", "Date modified" };
+        SortBy.ItemsSource = new[] { "Name", "Size", "Type", "Extension", "Date modified" };
         SortBy.SelectedItem = _settings.SortBy;
         SortDescending.IsChecked = _settings.SortDescending;
         FoldersFirst.IsChecked = _settings.FoldersFirst;
@@ -84,6 +88,32 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(this, true);
         DragDiagnostics.Log("Initialized drag event diagnostics on main window");
     }
+    // Keep both expanded panels equally sized by default. Collapsed headers take
+    // only their natural height, allowing the other panel to use the remaining space.
+    // The splitter remains draggable while both panels are expanded.
+    private void SidebarPanel_Expanded(object? sender, RoutedEventArgs e) => UpdateSidebarPanelLayout();
+    private void SidebarPanel_Collapsed(object? sender, RoutedEventArgs e) => UpdateSidebarPanelLayout();
+
+    private void UpdateSidebarPanelLayout()
+    {
+        // Expansion events may fire before InitializeComponent completes.
+        if (SidebarPanels is null || ShortcutsPanel is null || DirectoriesPanel is null || SidebarSplitter is null)
+            return;
+
+        var shortcutsOpen = ShortcutsPanel.IsExpanded;
+        var directoriesOpen = DirectoriesPanel.IsExpanded;
+        var shortcutsRow = SidebarPanels.RowDefinitions[0];
+        var dividerRow = SidebarPanels.RowDefinitions[1];
+        var directoriesRow = SidebarPanels.RowDefinitions[2];
+
+        // Give each panel a true half-height when both are expanded. When a
+        // panel collapses, use Auto for its header so no empty region remains.
+        shortcutsRow.Height = shortcutsOpen ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        directoriesRow.Height = directoriesOpen ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        dividerRow.Height = shortcutsOpen && directoriesOpen ? new GridLength(6) : new GridLength(0);
+        SidebarSplitter.IsVisible = shortcutsOpen && directoriesOpen;
+    }
+
     private void Pane_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
@@ -117,6 +147,8 @@ public partial class MainWindow : Window
     }
     private void RefreshFiles()
     {
+        _integrityScan?.Cancel();
+        _integrityScan = new CancellationTokenSource();
         if (Active is null) return;
         try
         {
@@ -126,6 +158,7 @@ public partial class MainWindow : Window
             _entries = sorted;
             _viewItems.Clear();
             foreach (var entry in sorted) _viewItems.Add(new FileViewItem(entry));
+            _ = ScanIntegrityAsync(_viewItems.ToArray(), _integrityScan.Token);
             ApplyViewMode();
             StatusText.Text = $"{entries.Count} items  •  {Active.CurrentPath}";
             _refreshing = true;
@@ -139,6 +172,29 @@ public partial class MainWindow : Window
             _viewItems.Clear();
         }
     }
+    private static async System.Threading.Tasks.Task ScanIntegrityAsync(FileViewItem[] items, CancellationToken token)
+    {
+        // Bound concurrency and skip folders and symlinks. No file is executed.
+        using var limit = new SemaphoreSlim(2);
+        var tasks = items.Where(i => !i.Entry.IsDirectory).Select(async item =>
+        {
+            try
+            {
+                await limit.WaitAsync(token);
+                try
+                {
+                    token.ThrowIfCancellationRequested();
+                    var result = await System.Threading.Tasks.Task.Run(() => FileTypeIntegrity.Check(item.Entry.FullPath), token);
+                    if (!token.IsCancellationRequested)
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (!token.IsCancellationRequested) item.ApplyIntegrity(result); });
+                }
+                finally { limit.Release(); }
+            }
+            catch (OperationCanceledException) { }
+        });
+        await System.Threading.Tasks.Task.WhenAll(tasks);
+    }
+
     private IReadOnlyList<DirectoryEntry> SortEntries(IReadOnlyList<DirectoryEntry> entries)
     {
         // File metadata can disappear during enumeration, so treat inaccessible items as zero/oldest.
@@ -151,7 +207,8 @@ public partial class MainWindow : Window
         {
             try { return File.GetLastWriteTimeUtc(entry.FullPath); } catch { return DateTime.MinValue; }
         }
-        string Type(DirectoryEntry entry) => entry.IsDirectory ? "" : Path.GetExtension(entry.Name);
+        string Type(DirectoryEntry entry) => entry.IsDirectory ? "" : FilenameExtension.GetExtension(entry.Name);
+        string Extension(DirectoryEntry entry) => entry.IsDirectory ? "" : FilenameExtension.GetExtension(entry.Name).TrimStart('.');
         IOrderedEnumerable<DirectoryEntry> sorted = _settings.FoldersFirst
             ? entries.OrderBy(entry => entry.IsDirectory ? 0 : 1)
             : entries.OrderBy(_ => 0);
@@ -160,6 +217,7 @@ public partial class MainWindow : Window
         {
             "Size" => descending ? sorted.ThenByDescending(Size) : sorted.ThenBy(Size),
             "Type" => descending ? sorted.ThenByDescending(Type, StringComparer.OrdinalIgnoreCase) : sorted.ThenBy(Type, StringComparer.OrdinalIgnoreCase),
+            "Extension" => descending ? sorted.ThenByDescending(Extension, StringComparer.OrdinalIgnoreCase) : sorted.ThenBy(Extension, StringComparer.OrdinalIgnoreCase),
             "Date modified" => descending ? sorted.ThenByDescending(Modified) : sorted.ThenBy(Modified),
             _ => descending ? sorted.ThenByDescending(entry => entry.Name, StringComparer.OrdinalIgnoreCase) : sorted.ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
         };
@@ -923,6 +981,54 @@ public partial class MainWindow : Window
         try { _terminal.Launch(Active?.CurrentPath ?? Home, _settings); }
         catch (Exception ex) { StatusText.Text = $"Terminal: {ex.Message}"; }
     }
+    private async void Help_Click(object? sender, RoutedEventArgs e)
+    {
+        await new HelpWindow().ShowDialog(this);
+    }
+
+    private async void About_Click(object? sender, RoutedEventArgs e)
+    {
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        var displayVersion = version is null ? "Unknown" : $"{version.Major}.{version.Minor}.{version.Build}";
+        await ShowInformationAsync("About filepilot",
+            $"filepilot v{displayVersion}\n\nLinux file manager built with .NET and Avalonia.\n\n" +
+            "Features include tabbed browsing, multiple file views, native file drag-and-drop, " +
+            "clipboard operations, and libmagic-based File Type Integrity checks.\n\n" +
+            "Source repository: WA1GONFM\n\n" +
+            "License: MIT License\nCopyright (c) 2026 filepilot contributors\n" +
+            "See the LICENSE file for permission and warranty terms.", 520, 355);
+    }
+
+    private async Task ShowInformationAsync(string title, string message, double width, double height)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = width,
+            Height = height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var close = new Button { Content = "Close", HorizontalAlignment = HorizontalAlignment.Right };
+        close.Click += (_, _) => dialog.Close();
+        dialog.Content = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto"),
+            Margin = new Thickness(20),
+            RowSpacing = 12,
+            Children =
+            {
+                new ScrollViewer
+                {
+                    Content = new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                },
+                close
+            }
+        };
+        Grid.SetRow(close, 1);
+        await dialog.ShowDialog(this);
+    }
+
     private async void Settings_Click(object? sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(_settings, _store);

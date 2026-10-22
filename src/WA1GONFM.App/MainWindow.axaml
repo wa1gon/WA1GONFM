@@ -33,27 +33,35 @@
         <Button Click="NewFolder_Click" ToolTip.Tip="New folder"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 7 V19 H21 V7 H12 L10 4 H3 Z M12 10 V17 M8.5 13.5 H15.5" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
         <Button Click="Refresh_Click" ToolTip.Tip="Refresh"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M20 7 V3 L16 7 H20 C18 3 14 2 10 3 C6 4 4 7 4 10 M4 17 V21 L8 17 H4 C6 21 10 22 14 21 C18 20 20 17 20 14" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
         <Button Click="Terminal_Click" ToolTip.Tip="Open terminal here"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 5 H21 V19 H3 Z M7 9 10 12 7 15 M12 15 H17" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
+        <Button Content="Help" Click="Help_Click" ToolTip.Tip="Keyboard shortcuts and file integrity guide"/>
+        <Button Content="About" Click="About_Click" ToolTip.Tip="About filepilot"/>
         <Button Click="Settings_Click" ToolTip.Tip="Settings"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M12 3 V6 M12 18 V21 M3 12 H6 M18 12 H21 M5.6 5.6 7.8 7.8 M16.2 16.2 18.4 18.4 M18.4 5.6 16.2 7.8 M7.8 16.2 5.6 18.4 M12 8 A4 4 0 1 0 12 16 A4 4 0 1 0 12 8" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
       </StackPanel>
     </Border>
     <Border Grid.Row="1" Background="{DynamicResource FmSurface}" Padding="8,5"><TextBlock x:Name="StatusText" Foreground="{DynamicResource FmText}" Text="Ready"/></Border>
     <Grid Grid.Row="2" ColumnDefinitions="260,5,*">
-      <Grid Grid.Column="0" RowDefinitions="Auto,155,Auto,*" Margin="10,10,4,10">
-        <DockPanel><TextBlock Text="SHORTCUTS" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" VerticalAlignment="Center"/><Button Content="+" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="AddShortcut_Click" ToolTip.Tip="Add shortcut"/></DockPanel>
-        <ListBox Grid.Row="1" x:Name="ShortcutsList" Tapped="Shortcut_Tapped" DoubleTapped="Shortcut_DoubleTapped" PointerPressed="Shortcut_PointerPressed">
-          <ListBox.ContextMenu>
-            <ContextMenu><MenuItem Header="Remove Shortcut" Click="RemoveShortcut_Click"/></ContextMenu>
-          </ListBox.ContextMenu>
-        </ListBox>
-        <TextBlock Grid.Row="2" Text="DIRECTORIES  /" FontWeight="Bold" Foreground="{DynamicResource FmAccent}" Margin="0,12,0,8"/>
-        <TreeView Grid.Row="3" DragDrop.AllowDrop="True" DragDrop.DragOver="Tree_DragOver" DragDrop.Drop="Tree_Drop" x:Name="DirectoryTree" SelectionChanged="Tree_SelectionChanged">
-          <TreeView.Styles>
-            <Style Selector="TreeViewItem">
-              <Setter Property="IsVisible" Value="{Binding IsReal}"/>
-            </Style>
-          </TreeView.Styles>
-          <TreeView.ItemTemplate><TreeDataTemplate ItemsSource="{Binding Children}"><TextBlock Text="{Binding Name}"/></TreeDataTemplate></TreeView.ItemTemplate>
-        </TreeView>
+      <Grid x:Name="SidebarPanels" Grid.Column="0" RowDefinitions="*,6,*" Margin="10,10,4,10" MinHeight="80" RowSpacing="0">
+        <Expander x:Name="ShortcutsPanel" Grid.Row="0" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Header="SHORTCUTS" IsExpanded="True" Expanded="SidebarPanel_Expanded" Collapsed="SidebarPanel_Collapsed">
+          <Grid RowDefinitions="Auto,*" MinHeight="0" VerticalAlignment="Stretch">
+            <Button Grid.Row="0" Content="+ Add shortcut" HorizontalAlignment="Right" Click="AddShortcut_Click" ToolTip.Tip="Add current directory to shortcuts"/>
+            <ListBox Grid.Row="1" x:Name="ShortcutsList" MinHeight="0" VerticalAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto" Tapped="Shortcut_Tapped" DoubleTapped="Shortcut_DoubleTapped" PointerPressed="Shortcut_PointerPressed">
+              <ListBox.ContextMenu>
+                <ContextMenu><MenuItem Header="Remove Shortcut" Click="RemoveShortcut_Click"/></ContextMenu>
+              </ListBox.ContextMenu>
+            </ListBox>
+          </Grid>
+        </Expander>
+        <GridSplitter x:Name="SidebarSplitter" Grid.Row="1" Height="6" ResizeDirection="Rows" Background="{DynamicResource FmToolbar}" Cursor="SizeNorthSouth" ToolTip.Tip="Drag to resize shortcuts and directories"/>
+        <Expander x:Name="DirectoriesPanel" Grid.Row="2" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Header="DIRECTORIES  /" IsExpanded="True" Expanded="SidebarPanel_Expanded" Collapsed="SidebarPanel_Collapsed">
+          <TreeView MinHeight="0" VerticalAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto" DragDrop.AllowDrop="True" DragDrop.DragOver="Tree_DragOver" DragDrop.Drop="Tree_Drop" x:Name="DirectoryTree" SelectionChanged="Tree_SelectionChanged">
+            <TreeView.Styles>
+              <Style Selector="TreeViewItem">
+                <Setter Property="IsVisible" Value="{Binding IsReal}"/>
+              </Style>
+            </TreeView.Styles>
+            <TreeView.ItemTemplate><TreeDataTemplate ItemsSource="{Binding Children}"><TextBlock Text="{Binding Name}"/></TreeDataTemplate></TreeView.ItemTemplate>
+          </TreeView>
+        </Expander>
       </Grid>
       <GridSplitter Grid.Column="1" Width="5" Background="{DynamicResource FmToolbar}"/>
       <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*" Margin="6,10,10,10">
@@ -88,27 +96,51 @@
               <MenuItem Header="Open Terminal Here" Click="Terminal_Click"/>
           </ContextMenu>
         </Grid.ContextMenu>
-        <Grid RowDefinitions="Auto,*" IsVisible="True" x:Name="DetailsContainer">
-          <Grid Grid.Row="0" ColumnDefinitions="32,*,110,120,170" Margin="3,2">
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" IsVisible="True" x:Name="DetailsContainer">
+        <Grid RowDefinitions="Auto,*" MinWidth="1160">
+          <Grid Grid.Row="0" Margin="3,2">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="32"/>
+              <ColumnDefinition Width="360"/>
+              <ColumnDefinition Width="100"/>
+              <ColumnDefinition Width="270"/>
+              <ColumnDefinition Width="90"/>
+              <ColumnDefinition Width="170"/>
+              <ColumnDefinition Width="110"/>
+            </Grid.ColumnDefinitions>
             <Button Grid.Column="1" Content="Name" Tag="Name" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="SortHeader_Click"/>
             <Button Grid.Column="2" Content="Size" Tag="Size" Click="SortHeader_Click"/>
             <Button Grid.Column="3" Content="Type" Tag="Type" Click="SortHeader_Click"/>
-            <Button Grid.Column="4" Content="Modified" Tag="Date modified" Click="SortHeader_Click"/>
+            <Button Grid.Column="4" Content="Ext" Tag="Extension" Click="SortHeader_Click"/>
+            <Button Grid.Column="5" Content="Modified" Tag="Date modified" Click="SortHeader_Click"/>
+            <TextBlock Grid.Column="6" Text="Security" VerticalAlignment="Center" FontWeight="Bold"/>
           </Grid>
         <ListBox Grid.Row="1" x:Name="FilesList" SelectionMode="Multiple" SelectionChanged="ViewSelection_Changed" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <Grid ColumnDefinitions="32,*,110,120,170" Margin="3,2">
+              <Grid Margin="3,2">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="32"/>
+                  <ColumnDefinition Width="360"/>
+                  <ColumnDefinition Width="100"/>
+                  <ColumnDefinition Width="270"/>
+                  <ColumnDefinition Width="90"/>
+                  <ColumnDefinition Width="170"/>
+                  <ColumnDefinition Width="110"/>
+                </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding Glyph}"/>
-                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                <Border Grid.Column="1" Background="{Binding WarningBackground}" CornerRadius="3" Padding="3,0" ToolTip.Tip="{Binding IntegrityMessage}"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/></Border>
                 <TextBlock Grid.Column="2" Text="{Binding SizeText}"/>
-                <TextBlock Grid.Column="3" Text="{Binding TypeText}"/>
-                <TextBlock Grid.Column="4" Text="{Binding ModifiedText}"/>
+                <TextBlock Grid.Column="3" Text="{Binding TypeText}" Margin="8,0,12,0" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="4" Text="{Binding ExtensionText}" Margin="8,0,0,0"/>
+                <TextBlock Grid.Column="5" Text="{Binding ModifiedText}"/>
+                <TextBlock Grid.Column="6" Text="{Binding IntegrityText}" Foreground="{Binding WarningForeground}"/>
               </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
         </Grid>
+        </ScrollViewer>
         <ListBox x:Name="IconFilesList" SelectionMode="Multiple" PointerReleased="Files_PointerReleased" IsVisible="False" SelectionChanged="ViewSelection_Changed" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
           <ListBox.ItemTemplate>
@@ -118,7 +150,7 @@
                   <TextBlock Text="{Binding Glyph}" FontSize="43" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                   <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
                 </Grid>
-                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" TextAlignment="Center" MaxLines="2"/>
+                <Border Background="{Binding WarningBackground}" ToolTip.Tip="{Binding IntegrityMessage}" CornerRadius="3" Padding="2"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" TextAlignment="Center" MaxLines="2"/></Border>
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
@@ -129,7 +161,7 @@
             <DataTemplate>
               <StackPanel Orientation="Horizontal" Width="220" Spacing="6" Margin="4,2">
                 <TextBlock Text="{Binding Glyph}"/>
-                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Width="190"/>
+                <Border Background="{Binding WarningBackground}" ToolTip.Tip="{Binding IntegrityMessage}" CornerRadius="3" Padding="2"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Width="190"/></Border>
               </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>

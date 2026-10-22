@@ -24,8 +24,8 @@ public sealed class SettingsWindow : Window
             settings.ClickMode = clickMode.SelectedItem as string ?? "Single";
             store.Save(settings);
         };
-        var executable = new TextBox { Text = settings.TerminalExecutable, Watermark = "e.g. xfce4-terminal" };
-        var arguments = new TextBox { Text = settings.TerminalArguments, Watermark = "Optional command-line arguments" };
+        var executable = new TextBox { Text = settings.TerminalExecutable, PlaceholderText = "e.g. xfce4-terminal" };
+        var arguments = new TextBox { Text = settings.TerminalArguments, PlaceholderText = "Optional command-line arguments" };
         var save = new Button { Content = "Save", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
         save.Click += (_, _) =>
         {

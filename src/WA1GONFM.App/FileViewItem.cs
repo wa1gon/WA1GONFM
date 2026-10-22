@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Avalonia.Media.Imaging;
+using Avalonia.Media;
 using Avalonia.Threading;
 
 namespace WA1GONFM.App;
@@ -16,11 +17,58 @@ public sealed class FileViewItem : INotifyPropertyChanged
     private static readonly object CacheLock = new();
     private Bitmap? _thumbnail;
     private bool _requested;
+    private IntegritySeverity _integrity = IntegritySeverity.Unverified;
+    private string _integrityMessage = "Not yet verified";
+    private string _detectedMime = "";
+    private string _detectedType = "";
+    public IntegritySeverity Integrity => _integrity;
+    public string IntegrityText => _integrity switch
+    {
+        IntegritySeverity.HighRisk => "⚠ HIGH RISK",
+        IntegritySeverity.Mismatch => "⚠ Mismatch",
+        IntegritySeverity.Empty => "Empty",
+        IntegritySeverity.Match => "✓",
+        IntegritySeverity.Unknown => "?",
+        _ => "…"
+    };
+    public string IntegrityMessage => _integrityMessage;
+    public string DetectedMime => _detectedMime;
+    public string DetectedType => _detectedType;
+    public IBrush? WarningBackground => _integrity switch
+    {
+        IntegritySeverity.HighRisk => new SolidColorBrush(Color.FromArgb(70, 220, 38, 38)),
+        IntegritySeverity.Mismatch => new SolidColorBrush(Color.FromArgb(60, 234, 179, 8)),
+        _ => null
+    };
+    public IBrush? WarningForeground => _integrity switch
+    {
+        IntegritySeverity.HighRisk => Brushes.OrangeRed,
+        IntegritySeverity.Mismatch => Brushes.DarkOrange,
+        _ => null
+    };
+    public void ApplyIntegrity(IntegrityResult result)
+    {
+        _integrity = result.Severity;
+        _integrityMessage = result.Message;
+        _detectedMime = result.Mime;
+        _detectedType = FileTypeIntegrity.DescribeMime(result.Mime);
+        OnPropertyChanged(nameof(IntegrityText));
+        OnPropertyChanged(nameof(IntegrityMessage));
+        OnPropertyChanged(nameof(DetectedMime));
+        OnPropertyChanged(nameof(DetectedType));
+        OnPropertyChanged(nameof(TypeText));
+        OnPropertyChanged(nameof(WarningBackground));
+        OnPropertyChanged(nameof(WarningForeground));
+    }
+
 
     public DirectoryEntry Entry { get; }
     public string Name => Entry.Name;
     public string Glyph => Entry.IsDirectory ? "📁" : "📄";
-    public string TypeText => Entry.IsDirectory ? "Folder" : Path.GetExtension(Entry.Name).TrimStart('.').ToUpperInvariant();
+    public string ExtensionText => Entry.IsDirectory ? "" : FilenameExtension.GetExtension(Entry.Name).TrimStart('.').ToLowerInvariant();
+    public string TypeText => Entry.IsDirectory ? "Folder"
+        : !string.IsNullOrWhiteSpace(_detectedType) ? _detectedType
+        : string.IsNullOrWhiteSpace(ExtensionText) ? "Detecting…" : ExtensionText.ToUpperInvariant();
     public string SizeText { get; }
     public string ModifiedText { get; }
     public Bitmap? Thumbnail { get => _thumbnail; private set { _thumbnail = value; OnPropertyChanged(); } }

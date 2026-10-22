@@ -3,7 +3,7 @@ public sealed class SettingsWindow : Window
 {
     public SettingsWindow(AppSettings settings, SettingsStore store)
     {
-        Title = "WA1GONFM Settings";
+        Title = "filepilot Settings";
         Width = 540; Height = 465;
         var theme = new ComboBox { ItemsSource = new[] { "System", "Light", "Dark" }, SelectedItem = settings.Theme };
         theme.SelectionChanged += (_, _) =>

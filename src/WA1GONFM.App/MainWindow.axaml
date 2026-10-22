@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="WA1GONFM" DragDrop.AllowDrop="True" Width="1120" Height="720" MinWidth="750" MinHeight="480">
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="WA1GONFM.App.MainWindow" Title="filepilot" Icon="avares://filepilot/Assets/filepilot-256.png" DragDrop.AllowDrop="True" Width="1120" Height="720" MinWidth="750" MinHeight="480">
   <Window.Styles>
     <Style Selector="TabItem">
       <Setter Property="Background" Value="{DynamicResource FmInactiveTab}"/>
@@ -95,7 +95,7 @@
             <Button Grid.Column="3" Content="Type" Tag="Type" Click="SortHeader_Click"/>
             <Button Grid.Column="4" Content="Modified" Tag="Date modified" Click="SortHeader_Click"/>
           </Grid>
-        <ListBox Grid.Row="1" x:Name="FilesList" SelectionMode="Multiple" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <ListBox Grid.Row="1" x:Name="FilesList" SelectionMode="Multiple" SelectionChanged="ViewSelection_Changed" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemTemplate>
             <DataTemplate>
               <Grid ColumnDefinitions="32,*,110,120,170" Margin="3,2">

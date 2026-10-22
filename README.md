@@ -2,6 +2,21 @@
 
 A .NET 10 and Avalonia 12.1.4 file manager for Linux. The application is named **filepilot** (lowercase). The existing GitHub repository, solution, project directories, and C# namespaces retain the **WA1GONFM** name.
 
+## What makes filepilot different?
+
+**filepilot** is a lightweight, cross-platform file manager built with **.NET 10 and Avalonia 12**, with particular attention to working *with* the Linux desktop rather than in isolation.
+
+- **Native file-manager interoperability.** Drag files between filepilot and **Nemo in either direction**, or drag files onto folders inside filepilot. This has been tested on Linux Mint Cinnamon/X11.
+- **Clipboard compatibility with Nemo.** Copy and cut files between filepilot and the desktop file manager, including multi-file operations.
+- **Three ways to browse.** Switch between **Details**, **Icons**, and **Compact** views, with selection carried across view changes.
+- **Multi-file operations.** Ctrl+Click, Shift+Click, and Ctrl+A select multiple files or folders; copy, cut, paste, and delete operate on the selection. Delete uses Trash, while Shift+Delete requests permanent deletion with confirmation.
+- **Tabbed navigation.** Work in multiple directories without opening a separate window for each one.
+- **Desktop-aware directory opening.** Launch `filepilot ~/Documents` or open a local `file://` URL. Optionally register filepilot as the default handler for directories (`inode/directory`).
+- **One executable for deployment.** Publish a self-contained **linux-x64** binary with the .NET runtime bundled; target systems still need compatible Linux native libraries.
+- **Desktop integration without changing your defaults.** The installer adds the custom folder-and-compass icon and a `.desktop` launcher, including Cinnamon taskbar association. Changing the system's default file manager remains opt-in.
+
+**Current platform status:** Linux Mint Cinnamon on X11 is the primary tested environment. Other distributions, desktop environments, and Wayland require additional testing.
+
 ## Requirements
 
 - Linux x64 desktop with X11 (tested on Linux Mint Cinnamon with Nemo)
@@ -115,3 +130,33 @@ refresh the Cinnamon menu or log out and back in for the icon to appear.
 
 `.gitignore` excludes all `*.pdb` files. Already tracked PDB files must be
 removed from Git's index separately (`git rm --cached <path>`).
+
+
+## Open directories from other applications
+
+filepilot accepts a directory path or a local `file://` URL as its first argument.
+
+```bash
+filepilot ~/Documents
+filepilot 'file:///home/your-user/My%20Documents'
+```
+
+The installer registers the `inode/directory` MIME type but does not change your existing default file manager. To opt in:
+
+```bash
+xdg-mime default filepilot.desktop inode/directory
+xdg-mime query default inode/directory
+xdg-open ~/Documents
+```
+
+To restore Nemo on Mint Cinnamon:
+
+```bash
+xdg-mime default nemo.desktop inode/directory
+```
+
+The `.desktop` launcher passes folder URLs with `%U`. If the argument is missing, invalid, or points to a non-directory, filepilot starts in your home directory.
+
+## Multi-selection
+
+In Details, Icons, or Compact view, use Ctrl+Click to toggle items, Shift+Click to select a range, and Ctrl+A to select all when the file list has focus. Ctrl+C copies all selected paths, Ctrl+X cuts them, Ctrl+V pastes, Delete moves selected items to Trash, and Shift+Delete permanently deletes after confirmation when enabled. Operations apply to both files and directories.

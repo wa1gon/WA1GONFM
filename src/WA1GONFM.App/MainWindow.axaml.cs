@@ -22,7 +22,7 @@ public partial class MainWindow : Window
     private readonly TerminalLauncher _terminal = new();
     private readonly LinuxFileLauncher _launcher = new();
     private readonly FileOperations _operations = new();
-    private string? _clipboardPath;
+    private string[] _clipboardPaths = Array.Empty<string>();
     private bool _clipboardCut;
     private readonly AppSettings _settings;
     private readonly ObservableCollection<NavigationTab> _tabs = new();
@@ -40,7 +40,7 @@ public partial class MainWindow : Window
     private bool _initialized;
     private string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private NavigationTab? Active => Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < _tabs.Count ? _tabs[Tabs.SelectedIndex] : null;
-    public MainWindow()
+    public MainWindow(string? startupDirectory = null)
     {
         _settings = _store.Load();
         InitializeComponent();
@@ -71,7 +71,7 @@ public partial class MainWindow : Window
         SortDescending.IsChecked = _settings.SortDescending;
         FoldersFirst.IsChecked = _settings.FoldersFirst;
         RefreshShortcuts();
-        _tabs.Add(new NavigationTab(Home) { ViewMode = _settings.DefaultViewMode });
+        _tabs.Add(new NavigationTab(startupDirectory ?? Home) { ViewMode = _settings.DefaultViewMode });
         _initialized = true;
         RefreshTabs(0);
         AddHandler(KeyDownEvent, Window_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -217,6 +217,11 @@ public partial class MainWindow : Window
         _tabs.RemoveAt(index);
         RefreshTabs(Math.Clamp(selected > index ? selected - 1 : selected, 0, _tabs.Count - 1));
     }
+    private string[] SelectedEntries => CurrentFilesList.SelectedItems?
+        .OfType<FileViewItem>()
+        .Select(item => item.Entry.FullPath)
+        .Distinct(StringComparer.Ordinal)
+        .ToArray() ?? Array.Empty<string>();
     private string? SelectedEntry => CurrentFilesList.SelectedIndex is var i && i >= 0 && i < _entries.Count ? _entries[i].FullPath : null;
     private void ApplyViewMode()
     {
@@ -231,15 +236,25 @@ public partial class MainWindow : Window
     private void SetViewMode(string mode)
     {
         if (Active is null) return;
-        var selected = CurrentFilesList.SelectedIndex;
+        var selected = SelectedEntries.ToHashSet(StringComparer.Ordinal);
         Active.ViewMode = mode;
         ApplyViewMode();
-        if (selected >= 0 && selected < _viewItems.Count) CurrentFilesList.SelectedIndex = selected;
+        var list = CurrentFilesList;
+        list.SelectedItems?.Clear();
+        foreach (var item in _viewItems.Where(item => selected.Contains(item.Entry.FullPath)))
+            list.SelectedItems?.Add(item);
     }
     private void DetailsView_Click(object? sender, RoutedEventArgs e) => SetViewMode("Details");
     private void IconView_Click(object? sender, RoutedEventArgs e) => SetViewMode("Icons");
     private void CompactView_Click(object? sender, RoutedEventArgs e) => SetViewMode("Compact");
-    private void ViewSelection_Changed(object? sender, SelectionChangedEventArgs e) { }
+    private void ViewSelection_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ListBox list || !ReferenceEquals(list, CurrentFilesList) || Active is null) return;
+        var count = SelectedEntries.Length;
+        StatusText.Text = count == 0
+            ? $"{_entries.Count} items  •  {Active.CurrentPath}"
+            : $"{count} item(s) selected  •  {Active.CurrentPath}";
+    }
     // Tunnel keyboard shortcuts so they work after changing tabs or clicking the background.
     // Do not hijack text editing inside TextBox controls.
     private async void Window_KeyDown(object? sender, KeyEventArgs e)
@@ -257,6 +272,12 @@ public partial class MainWindow : Window
             if (e.Key == Key.C) { await CaptureSelectionAsync(false); e.Handled = true; }
             else if (e.Key == Key.X) { await CaptureSelectionAsync(true); e.Handled = true; }
             else if (e.Key == Key.V) { await PasteAsync(); e.Handled = true; }
+            else if (e.Key == Key.A && (ReferenceEquals(e.Source, CurrentFilesList) ||
+                         (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBox>() == CurrentFilesList))
+            {
+                CurrentFilesList.SelectAll();
+                e.Handled = true;
+            }
             else if (e.Key == Key.D1) { SetViewMode("Details"); e.Handled = true; }
             else if (e.Key == Key.D2) { SetViewMode("Icons"); e.Handled = true; }
             else if (e.Key == Key.D3) { SetViewMode("Compact"); e.Handled = true; }
@@ -278,25 +299,22 @@ public partial class MainWindow : Window
 
     private async Task CaptureSelectionAsync(bool cut)
     {
-        var source = SelectedEntry;
-        if (source is null) return;
+        var sources = SelectedEntries;
+        if (sources.Length == 0) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) { StatusText.Text = "System clipboard unavailable."; return; }
         try
         {
-            var uri = new Uri(Path.GetFullPath(source));
-            // GTK/Nemo expects URI text targets, not an Avalonia file object.
-            // Both formats belong to the same transfer item.
+            var uris = sources.Select(path => new Uri(Path.GetFullPath(path)).AbsoluteUri).ToArray();
             var item = new DataTransferItem();
-            item.Set(UriListFormat, uri.AbsoluteUri + "\r\n");
-            item.Set(GnomeCopiedFilesFormat, (cut ? "cut\n" : "copy\n") + uri.AbsoluteUri);
+            item.Set(UriListFormat, string.Join("\r\n", uris) + "\r\n");
+            item.Set(GnomeCopiedFilesFormat, (cut ? "cut\n" : "copy\n") + string.Join("\n", uris));
             var transfer = new DataTransfer();
             transfer.Add(item);
             await clipboard.SetDataAsync(transfer);
-            // Clipboard now owns transfer. Do not dispose it here.
-            _clipboardPath = source;
+            _clipboardPaths = sources;
             _clipboardCut = cut;
-            StatusText.Text = $"{(cut ? "Cut" : "Copied")}: {source}";
+            StatusText.Text = $"{(cut ? "Cut" : "Copied")} {sources.Length} item(s)";
         }
         catch (Exception ex) { StatusText.Text = $"Clipboard failed: {ex.Message}"; }
     }
@@ -336,9 +354,8 @@ public partial class MainWindow : Window
                 }
             }
         }
-        if (paths.Count == 0 && _clipboardPath is { } ownPath &&
-            (File.Exists(ownPath) || Directory.Exists(ownPath)))
-            return (new[] { ownPath }, _clipboardCut);
+        if (paths.Count == 0 && _clipboardPaths.Length > 0)
+            return (_clipboardPaths.Where(path => File.Exists(path) || Directory.Exists(path)).ToArray(), _clipboardCut);
         return (paths.Distinct(StringComparer.Ordinal).ToArray(), cut);
     }
 
@@ -404,29 +421,42 @@ public partial class MainWindow : Window
             {
                 var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
                 if (clipboard is not null) await clipboard.ClearAsync();
-                _clipboardPath = null;
+                _clipboardPaths = Array.Empty<string>();
                 _clipboardCut = false;
             }
         }
     }
     private async Task DeleteSelectedAsync(bool permanent)
     {
-        var path = SelectedEntry;
-        if (path is null) return;
-        if (permanent)
+        var paths = SelectedEntries;
+        if (paths.Length == 0) return;
+        var title = permanent ? "Delete permanently" : "Move to Trash";
+        var action = permanent ? "Delete" : "Trash";
+        var confirmationEnabled = permanent ? _settings.ConfirmPermanentDelete : _settings.ConfirmTrash;
+        if (confirmationEnabled)
         {
-            if (_settings.ConfirmPermanentDelete &&
-                !await ConfirmAsync("Delete permanently", $"Permanently delete '{Path.GetFileName(path)}'? This cannot be undone.", "Delete")) return;
-            try { _operations.Delete(path); RefreshFiles(); InvalidateTreeFor(path); }
-            catch (Exception ex) { await ShowMessageAsync("Delete failed", ex.Message); }
+            var message = permanent
+                ? $"Permanently delete {paths.Length} selected item(s)? This cannot be undone."
+                : $"Move {paths.Length} selected item(s) to Trash?";
+            if (!await ConfirmAsync(title, message, action)) return;
         }
-        else
+        var completed = 0;
+        var failures = new List<string>();
+        foreach (var path in paths)
         {
-            if (_settings.ConfirmTrash &&
-                !await ConfirmAsync("Move to Trash", $"Move '{Path.GetFileName(path)}' to Trash?", "Trash")) return;
-            try { await TrashService.MoveToTrashAsync(path); RefreshFiles(); InvalidateTreeFor(path); }
-            catch (Exception ex) { await ShowMessageAsync("Trash failed", ex.Message); }
+            try
+            {
+                if (permanent) _operations.Delete(path);
+                else await TrashService.MoveToTrashAsync(path);
+                completed++;
+                InvalidateTreeFor(path);
+            }
+            catch (Exception ex) { failures.Add($"{Path.GetFileName(path)}: {ex.Message}"); }
         }
+        RefreshFiles();
+        StatusText.Text = $"{(permanent ? "Deleted" : "Trashed")} {completed} of {paths.Length} item(s)";
+        if (failures.Count > 0)
+            await ShowMessageAsync($"{title}: {failures.Count} failed", string.Join("\n", failures));
     }
     private async Task RenameSelectedAsync()
     {
@@ -697,8 +727,9 @@ public partial class MainWindow : Window
         _dragPressEvent = null;
         if (!point.Properties.IsRightButtonPressed) return;
         var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
-        if (item is not null) list.SelectedItem = item.DataContext;
-        else list.SelectedIndex = -1;
+        if (item is not null && !list.SelectedItems!.Contains(item.DataContext))
+            list.SelectedItem = item.DataContext;
+        else if (item is null) list.SelectedIndex = -1;
     }
     private async void OpenSelected_Click(object? sender, RoutedEventArgs e)
     {

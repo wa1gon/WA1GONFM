@@ -66,12 +66,13 @@ cat > "$DESKTOP_DIR/filepilot.desktop" <<EOF_DESKTOP
 Type=Application
 Name=filepilot
 Comment=File manager
-Exec=$INSTALL_DIR/filepilot
+Exec=$INSTALL_DIR/filepilot %U
 Icon=$ICON_DEST
 Terminal=false
 Categories=System;FileTools;FileManager;
 StartupNotify=true
 StartupWMClass=filepilot
+MimeType=inode/directory;
 EOF_DESKTOP
 chmod 644 "$DESKTOP_DIR/filepilot.desktop"
 

@@ -95,7 +95,7 @@
             <Button Grid.Column="3" Content="Type" Tag="Type" Click="SortHeader_Click"/>
             <Button Grid.Column="4" Content="Modified" Tag="Date modified" Click="SortHeader_Click"/>
           </Grid>
-        <ListBox Grid.Row="1" x:Name="FilesList" SelectionMode="Multiple" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
+        <ListBox Grid.Row="1" x:Name="FilesList" SelectionMode="Multiple" SelectionChanged="ViewSelection_Changed" PointerReleased="Files_PointerReleased" Background="{DynamicResource FmSurface}" Tapped="Files_Tapped" DoubleTapped="Files_DoubleTapped" KeyDown="Files_KeyDown" DragDrop.AllowDrop="True" DragDrop.Drop="Files_Drop" DragDrop.DragOver="Files_DragOver">
           <ListBox.ItemTemplate>
             <DataTemplate>
               <Grid ColumnDefinitions="32,*,110,120,170" Margin="3,2">

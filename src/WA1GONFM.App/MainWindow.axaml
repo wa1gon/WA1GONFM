@@ -42,9 +42,8 @@
     <Grid Grid.Row="2" ColumnDefinitions="260,5,*">
       <Grid x:Name="SidebarPanels" Grid.Column="0" RowDefinitions="*,6,*" Margin="10,10,4,10" MinHeight="80" RowSpacing="0">
         <Expander x:Name="ShortcutsPanel" Grid.Row="0" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Header="SHORTCUTS" IsExpanded="True" Expanded="SidebarPanel_Expanded" Collapsed="SidebarPanel_Collapsed">
-          <Grid RowDefinitions="Auto,*" MinHeight="0" VerticalAlignment="Stretch">
-            <Button Grid.Row="0" Content="+ Add shortcut" HorizontalAlignment="Right" Click="AddShortcut_Click" ToolTip.Tip="Add current directory to shortcuts"/>
-            <ListBox Grid.Row="1" x:Name="ShortcutsList" MinHeight="0" VerticalAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto" Tapped="Shortcut_Tapped" DoubleTapped="Shortcut_DoubleTapped" PointerPressed="Shortcut_PointerPressed">
+          <Grid RowDefinitions="*" MinHeight="0" VerticalAlignment="Stretch">
+            <ListBox Grid.Row="0" x:Name="ShortcutsList" MinHeight="0" VerticalAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto" Tapped="Shortcut_Tapped" DoubleTapped="Shortcut_DoubleTapped" PointerPressed="Shortcut_PointerPressed">
               <ListBox.ContextMenu>
                 <ContextMenu><MenuItem Header="Remove Shortcut" Click="RemoveShortcut_Click"/></ContextMenu>
               </ListBox.ContextMenu>
@@ -65,7 +64,7 @@
       </Grid>
       <GridSplitter Grid.Column="1" Width="5" Background="{DynamicResource FmToolbar}"/>
       <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*" Margin="6,10,10,10">
-        <DockPanel Background="{DynamicResource FmSurface}"><Button Content="+ New Tab" DockPanel.Dock="Right" Click="NewTab_Click" ToolTip.Tip="New tab"/><TabControl x:Name="Tabs" DragDrop.AllowDrop="True" DragDrop.DragOver="Tabs_DragOver" DragDrop.Drop="Tabs_Drop" SelectionChanged="Tabs_SelectionChanged" HorizontalAlignment="Stretch"/></DockPanel>
+        <DockPanel Background="{DynamicResource FmSurface}"><Button Content="+ Add Shortcut" DockPanel.Dock="Right" Click="AddShortcut_Click" ToolTip.Tip="Add current directory to shortcuts"/><Button Content="+ New Tab" DockPanel.Dock="Right" Click="NewTab_Click" ToolTip.Tip="New tab"/><TabControl x:Name="Tabs" DragDrop.AllowDrop="True" DragDrop.DragOver="Tabs_DragOver" DragDrop.Drop="Tabs_Drop" SelectionChanged="Tabs_SelectionChanged" HorizontalAlignment="Stretch"/></DockPanel>
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,5">
           <Button Click="DetailsView_Click" ToolTip.Tip="Details (Ctrl+1)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M4 5 H20 M4 10 H20 M4 15 H20 M4 20 H20" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>
           <Button Click="IconView_Click" ToolTip.Tip="Icons with automatic image previews (Ctrl+2)"><Viewbox Width="19" Height="19" Stretch="Uniform"><Canvas Width="24" Height="24"><Path Data="M3 3 H10 V10 H3 Z M14 3 H21 V10 H14 Z M3 14 H10 V21 H3 Z M14 14 H21 V21 H14 Z" Stroke="{DynamicResource FmText}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Fill="Transparent"/></Canvas></Viewbox></Button>

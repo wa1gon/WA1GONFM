@@ -69,8 +69,8 @@ public sealed class FileViewItem : INotifyPropertyChanged
     public string TypeText => Entry.IsDirectory ? "Folder"
         : !string.IsNullOrWhiteSpace(_detectedType) ? _detectedType
         : string.IsNullOrWhiteSpace(ExtensionText) ? "Detecting…" : ExtensionText.ToUpperInvariant();
-    public string SizeText { get; }
-    public string ModifiedText { get; }
+    public string SizeText { get; private set; }
+    public string ModifiedText { get; private set; }
     public Bitmap? Thumbnail { get => _thumbnail; private set { _thumbnail = value; OnPropertyChanged(); } }
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -96,6 +96,20 @@ public sealed class FileViewItem : INotifyPropertyChanged
             SizeText = "";
             ModifiedText = "";
         }
+    }
+
+    public void RefreshMetadata()
+    {
+        try
+        {
+            var size = Entry.IsDirectory ? "" : new FileInfo(Entry.FullPath).Length.ToString("N0");
+            var modified = (Entry.IsDirectory
+                ? Directory.GetLastWriteTime(Entry.FullPath)
+                : File.GetLastWriteTime(Entry.FullPath)).ToString("g");
+            if (SizeText != size) { SizeText = size; OnPropertyChanged(nameof(SizeText)); }
+            if (ModifiedText != modified) { ModifiedText = modified; OnPropertyChanged(nameof(ModifiedText)); }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     public void LoadThumbnail()

@@ -88,7 +88,7 @@ Install to another directory, supplied as the **first argument**:
 "$HOME/.local/bin/filepilot"
 ```
 
-The argument is a **directory**, not the complete executable filename. If using a custom directory, ensure it is in your `PATH` if you want to launch `filepilot` without its full path. This script targets `linux-x64` and requires the .NET SDK to build. The title bar shows the product name and assembly version, for example **filepilot v0.7.21**.
+The argument is a **directory**, not the complete executable filename. If using a custom directory, ensure it is in your `PATH` if you want to launch `filepilot` without its full path. This script targets `linux-x64` and requires the .NET SDK to build. The title bar shows the product name and assembly version, for example **filepilot v0.7.36**.
 
 ## Manual functional test steps
 
@@ -118,7 +118,7 @@ Drag-and-drop in both directions with Nemo and internal drag-and-drop were confi
 
 The repository and solution remain `WA1GONFM`; the user-facing application name and published executable are `filepilot`. Existing settings paths and C# namespaces are intentionally preserved for compatibility. See [FILEPILOT-RENAME.md](FILEPILOT-RENAME.md) for migration details.
 
-Earlier release notes are retained in Git history; this README describes the current v0.7.21 package rather than older scaffold limitations.
+Earlier release notes are retained in Git history; this README describes the current v0.7.36 package rather than older scaffold limitations.
 
 ## Application icon and desktop launcher
 
@@ -216,10 +216,91 @@ Shortcuts and Directories are now expandable/collapsible panels. Drag the horizo
 - A draggable divider remains available when both panels are expanded.
 - The About dialog now includes the MIT License notice. See `LICENSE` for full license terms.
 
-### v0.7.21 Unix dotfile extensions
+### v0.7.24 Unix dotfile extensions
 
 The Ext column, extension sorting, and content-integrity comparison now treat a leading dot in Unix dotfiles such as `.bash_history`, `.gitignore`, and `.env` as part of the name, rather than a file extension. Names with a separate subsequent dot, such as `.config.json`, still show `json` as their extension. Added automated tests for these cases.
 
-### Help dialog (v0.7.21)
+### Help dialog (v0.7.24)
 
 Help now provides a scrollable, sectioned guide covering navigation, keyboard shortcuts, file operations, sidebar controls, file type detection, and File Type Integrity warning levels.
+
+### v0.7.24 Shortcuts navigation
+
+Shortcuts are displayed alphabetically by their folder name (case-insensitive, with path as a tie-breaker). The **+ Add Shortcut** button is located beside **+ New Tab** above the file views.
+
+### v0.7.24 Linux Open With application picker
+
+The Open With dialog now discovers installed applications from XDG `.desktop` files,
+shows only MIME-associated applications by default, with an explicit **Show all installed applications**
+checkbox for choosing another application when needed. It displays the default application, supports opening by
+selection/double-click, manual executable entry, and an optional **Always use**
+checkbox that updates the Linux MIME default through `xdg-mime`.
+
+Uses `gio mime` for desktop associations and `gtk-launch` for launching `.desktop`
+applications, respecting their registered command arguments. The Open With dialog
+requires `gio`, `gtk-launch`, and `xdg-mime` to be installed, as is typical on
+Linux Mint Cinnamon.
+
+### v0.7.25 Open With checkbox compatibility fix
+
+Fixes Avalonia 12 build errors caused by using WPF-style `CheckBox.Checked` and `CheckBox.Unchecked` events. The Show all installed applications option now responds to changes in `ToggleButton.IsCheckedProperty`. Compatible applications still appear by default.
+
+### v0.7.26 Add applications to Open With
+
+In **Open With**, check **Show all installed applications**, select a program, and click **Add to list**.
+The application will appear in the compatible choices for that file type on subsequent visits.
+Choose **Remove from list** to remove a custom entry. This only changes filepilot's list, not the
+Linux system MIME defaults. Selecting **Always use** when opening an application changes the default
+through `xdg-mime`, as before. Custom choices are stored in
+`~/.config/filepilot/open-with-apps.json` (or `$XDG_CONFIG_HOME/filepilot/open-with-apps.json`).
+
+### v0.7.30 Automatic refresh and Open With sections
+
+- Automatically refresh the active directory when files change outside filepilot, debounced 350 ms. The Settings checkbox enables or disables monitoring.
+- Preserve current selection and scroll offset during watcher-triggered refreshes.
+- Open With shows alphabetized known applications for the MIME type; optional Show all displays a separate, alphabetized list of other installed applications.
+- Add and remove filepilot's custom MIME application associations. Linux-registered associations remain visible until changed through Linux settings.
+
+### v0.7.30 Incremental directory updates
+
+Directory watcher content changes update individual file rows without rebuilding the full list; structural changes still refresh the directory. Right-click and drag interactions defer watcher refreshes to avoid disrupting context menus. Linux shell scripts are executable (mode 755).
+
+### v0.7.30 Open With executable registration
+
+The Open With dialog can add programs by absolute executable path (for example `/usr/bin/code`) even when their desktop entry is missing or hidden. These entries are stored per MIME type and can be removed without changing system file associations.
+
+### v0.7.30 Friendly labels for manually added executables
+
+Open With now displays friendly names for common executables such as `/usr/bin/code` (Visual Studio Code), while preserving their full executable paths for launching. Hover an application entry to inspect its executable path or desktop entry ID.
+
+### v0.7.32 Configurable Open With application names
+
+The Open With dialog has **Edit display name** for manually added executables.
+Names are shared across MIME types and saved in `~/.config/filepilot/open-with-apps.json`
+under `applicationNames`. The friendly name is resolved by user configuration first,
+then Linux `.desktop` metadata (`Name` and `Exec`), then the executable filename.
+Existing per-MIME associations are preserved and migrated from the earlier JSON format.
+
+### v0.7.32 Open With management
+
+Open With now allows hiding system-discovered applications from the Known list for a particular MIME type using Remove from list. Hidden applications remain available under Show all installed applications and can be restored with Add selected to list. Edit display name is available for both desktop-registered applications and manually supplied executable paths. These choices only affect filepilot and do not modify Linux MIME associations.
+
+### v0.7.33 Open With mouse-wheel scrolling
+
+- Scroll the Known Applications and All Applications lists using the mouse wheel.
+- The dialog's outer scrolling remains available when the selected list reaches its top or bottom.
+- Preserves MIME filtering, list selection, custom display names, and application management.
+
+### v0.7.36 Edit Display Name dialog positioning
+
+The Edit Display Name modal uses Open With as its owner, keeping it in front of the Open With dialog.
+
+### v0.7.36 Open With display-name editor
+
+The Edit Display Name controls are pinned below the Open With application lists, instead of appearing outside the visible scrolled region. The dialog now reserves additional vertical space and focuses the edit box after layout.
+
+### Open With defaults
+
+For registered desktop applications, **Always use** updates Linux's MIME default.
+For manually added executables, it saves a filepilot-only MIME default in
+`~/.config/filepilot/open-with-apps.json` under `preferredApplications`.

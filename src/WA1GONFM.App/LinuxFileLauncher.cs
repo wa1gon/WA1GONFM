@@ -58,6 +58,22 @@ public sealed class LinuxFileLauncher
         if (!File.Exists(path)) throw new FileNotFoundException("File not found", path);
         // Content is examined even if the filename extension is misleading.
         var mime = DetectMimeType(path);
+        // Per-MIME filepilot preferences take priority over desktop associations.
+        var preferred = new OpenWithAssociationStore().GetPreferred(mime);
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            if (preferred.StartsWith("exec:", StringComparison.Ordinal))
+            {
+                var executable = preferred["exec:".Length..];
+                if (File.Exists(executable)) { OpenWith(executable, path); return; }
+            }
+            else
+            {
+                new LinuxApplicationRegistry().Launch(
+                    new DesktopApplication(preferred, preferred, false, false), path);
+                return;
+            }
+        }
         if (CanExecute(path) && IsNativeExecutableOrShebangScript(path))
         {
             Start(path);

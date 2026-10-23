@@ -13,6 +13,7 @@ public sealed class AppSettings
     public bool ConfirmOverwrite { get; set; } = true;
     public bool ConfirmTrash { get; set; } = false;
     public bool ConfirmPermanentDelete { get; set; } = true;
+    public bool AutoRefresh { get; set; } = true;
     public bool ShowHidden { get; set; }
     public bool ShowDirectories { get; set; } = true;
     public System.Collections.Generic.List<string> Shortcuts { get; set; } = new();

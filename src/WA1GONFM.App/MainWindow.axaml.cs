@@ -14,6 +14,17 @@ public partial class MainWindow : Window
     private readonly DirectoryBrowser _browser = new();
     private readonly ObservableCollection<FileViewItem> _viewItems = new();
     private CancellationTokenSource? _integrityScan;
+    private FileSystemWatcher? _directoryWatcher;
+    private string? _watchedDirectory;
+    private readonly Avalonia.Threading.DispatcherTimer _directoryRefreshTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(350)
+    };
+    private bool _directoryRefreshPending;
+    private bool _directoryStructureChanged;
+    private readonly HashSet<string> _modifiedPaths = new(StringComparer.Ordinal);
+    private DateTime _lastRightClickUtc = DateTime.MinValue;
+
     private ListBox CurrentFilesList => Active?.ViewMode switch
     {
         "Icons" => IconFilesList,
@@ -34,6 +45,7 @@ public partial class MainWindow : Window
     private ListBox? _dragSource;
     private FileViewItem? _pressedDragItem;
     private bool _dragging;
+    private bool _suppressSingleClickOpen;
     private bool _sortUpdating;
     private readonly string _windowDragId = Guid.NewGuid().ToString("N");
     private TabItem? _hoverTab;
@@ -74,6 +86,37 @@ public partial class MainWindow : Window
         SortBy.SelectedItem = _settings.SortBy;
         SortDescending.IsChecked = _settings.SortDescending;
         FoldersFirst.IsChecked = _settings.FoldersFirst;
+        _directoryRefreshTimer.Tick += (_, _) =>
+        {
+            _directoryRefreshTimer.Stop();
+            if (!_directoryRefreshPending || !_settings.AutoRefresh) return;
+            // Never recycle rows underneath an open context menu or active drag.
+            if (_dragging || _dragStart is not null ||
+                DateTime.UtcNow - _lastRightClickUtc < TimeSpan.FromSeconds(3))
+            {
+                _directoryRefreshTimer.Start();
+                return;
+            }
+            _directoryRefreshPending = false;
+            if (_directoryStructureChanged)
+            {
+                _directoryStructureChanged = false;
+                _modifiedPaths.Clear();
+                RefreshFilesPreservingState();
+            }
+            else
+            {
+                var paths = _modifiedPaths.ToArray();
+                _modifiedPaths.Clear();
+                foreach (var path in paths) UpdateModifiedFile(path);
+            }
+        };
+        Closed += (_, _) =>
+        {
+            _directoryRefreshTimer.Stop();
+            _directoryWatcher?.Dispose();
+            _integrityScan?.Cancel();
+        };
         RefreshShortcuts();
         _tabs.Add(new NavigationTab(startupDirectory ?? Home) { ViewMode = _settings.DefaultViewMode });
         _initialized = true;
@@ -156,6 +199,7 @@ public partial class MainWindow : Window
             var entries = _browser.List(Active.CurrentPath, _settings.ShowHidden, _settings.ShowDirectories);
             var sorted = SortEntries(entries);
             _entries = sorted;
+            ConfigureDirectoryWatcher();
             _viewItems.Clear();
             foreach (var entry in sorted) _viewItems.Add(new FileViewItem(entry));
             _ = ScanIntegrityAsync(_viewItems.ToArray(), _integrityScan.Token);
@@ -172,6 +216,119 @@ public partial class MainWindow : Window
             _viewItems.Clear();
         }
     }
+    private void ConfigureDirectoryWatcher()
+    {
+        var path = _settings.AutoRefresh ? Active?.CurrentPath : null;
+        if (string.Equals(path, _watchedDirectory, StringComparison.Ordinal) &&
+            (_directoryWatcher is not null || path is null)) return;
+        _directoryRefreshTimer.Stop();
+        _directoryRefreshPending = false;
+        _directoryStructureChanged = false;
+        _modifiedPaths.Clear();
+        _directoryWatcher?.Dispose();
+        _directoryWatcher = null;
+        _watchedDirectory = null;
+        if (path is null || !Directory.Exists(path)) return;
+        try
+        {
+            var watcher = new FileSystemWatcher(path)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName |
+                               NotifyFilters.LastWrite | NotifyFilters.Size,
+                IncludeSubdirectories = false
+            };
+            watcher.Changed += OnDirectoryChanged;
+            watcher.Created += OnDirectoryChanged;
+            watcher.Deleted += OnDirectoryChanged;
+            watcher.Renamed += OnDirectoryRenamed;
+            watcher.Error += OnDirectoryWatcherError;
+            watcher.EnableRaisingEvents = true;
+            _directoryWatcher = watcher;
+            _watchedDirectory = path;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Directory watcher unavailable: {ex.Message}");
+        }
+    }
+
+    private void OnDirectoryChanged(object sender, FileSystemEventArgs e) =>
+        QueueDirectoryRefresh(sender, e.FullPath, e.ChangeType != WatcherChangeTypes.Changed);
+
+    private void OnDirectoryRenamed(object sender, RenamedEventArgs e) =>
+        QueueDirectoryRefresh(sender, e.FullPath, true);
+
+    private void OnDirectoryWatcherError(object sender, ErrorEventArgs e)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(sender, _directoryWatcher)) return;
+            _directoryWatcher?.Dispose();
+            _directoryWatcher = null;
+            _watchedDirectory = null;
+            _directoryRefreshPending = true;
+            _directoryStructureChanged = true;
+            _directoryRefreshTimer.Stop();
+            _directoryRefreshTimer.Start();
+        });
+    }
+
+    private void QueueDirectoryRefresh(object sender, string path, bool structureChanged)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(sender, _directoryWatcher) || !_settings.AutoRefresh) return;
+            _directoryRefreshPending = true;
+            if (structureChanged) _directoryStructureChanged = true;
+            else _modifiedPaths.Add(path);
+            _directoryRefreshTimer.Stop();
+            _directoryRefreshTimer.Start();
+        });
+    }
+
+    private void UpdateModifiedFile(string path)
+    {
+        // A change to existing content should not replace the file list or its selection.
+        // Only this row's metadata and content-derived type need to be refreshed.
+        var item = _viewItems.FirstOrDefault(i =>
+            string.Equals(i.Entry.FullPath, path, StringComparison.Ordinal));
+        if (item is null || !File.Exists(path)) return;
+        item.RefreshMetadata();
+        var token = _integrityScan?.Token ?? CancellationToken.None;
+        _ = Task.Run(() => FileTypeIntegrity.Check(path), token).ContinueWith(task =>
+        {
+            if (task.IsCompletedSuccessfully && !token.IsCancellationRequested &&
+                _viewItems.Contains(item)) item.ApplyIntegrity(task.Result);
+        }, CancellationToken.None, TaskContinuationOptions.None,
+            TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    private void RefreshFilesPreservingState()
+    {
+        var selectedPaths = SelectedEntries.ToHashSet(StringComparer.Ordinal);
+        var scrolls = new[] { FilesList, IconFilesList, CompactFilesList }
+            .Select(list => list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault())
+            .ToArray();
+        var offsets = scrolls.Select(scroll => scroll?.Offset).ToArray();
+        RefreshFiles();
+        CurrentFilesList.SelectedItems?.Clear();
+        foreach (var item in _viewItems.Where(item => selectedPaths.Contains(item.Entry.FullPath)))
+            CurrentFilesList.SelectedItems?.Add(item);
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            for (var i = 0; i < scrolls.Length; i++)
+                if (scrolls[i] is not null && offsets[i] is { } offset) scrolls[i]!.Offset = offset;
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void SetAutoRefresh(bool enabled)
+    {
+        _settings.AutoRefresh = enabled;
+        _store.Save(_settings);
+        ConfigureDirectoryWatcher();
+        if (enabled) RefreshFilesPreservingState();
+    }
+
     private static async System.Threading.Tasks.Task ScanIntegrityAsync(FileViewItem[] items, CancellationToken token)
     {
         // Bound concurrency and skip folders and symlinks. No file is executed.
@@ -775,6 +932,8 @@ public partial class MainWindow : Window
         var point = e.GetCurrentPoint(list);
         if (point.Properties.IsLeftButtonPressed)
         {
+            // Modified clicks are for multi-selection, never single-click opening.
+            _suppressSingleClickOpen = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Shift)) != KeyModifiers.None;
             _dragStart = e.GetPosition(list);
             _dragPressEvent = e;
             _dragSource = list;
@@ -784,6 +943,7 @@ public partial class MainWindow : Window
         }
         _dragPressEvent = null;
         if (!point.Properties.IsRightButtonPressed) return;
+        _lastRightClickUtc = DateTime.UtcNow;
         var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
         if (item is not null && !list.SelectedItems!.Contains(item.DataContext))
             list.SelectedItem = item.DataContext;
@@ -806,25 +966,351 @@ public partial class MainWindow : Window
     }
     private async Task ShowOpenWithDialogAsync(string path)
     {
-        var appBox = new TextBox { PlaceholderText = "Application executable (e.g. xed, code, /usr/bin/evince)", Width = 430 };
-        var dialog = new Window { Title = $"Open With: {Path.GetFileName(path)}", Width = 520, Height = 210,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        var open = new Button { Content = "Open With" };
-        var defaultApp = new Button { Content = "Use Default" };
-        var cancel = new Button { Content = "Cancel" };
+        var registry = new LinuxApplicationRegistry();
+        string mime;
+        IReadOnlyList<DesktopApplication> apps;
+        try
+        {
+            mime = await Task.Run(() => registry.DetectMime(path));
+            apps = await Task.Run(() => registry.GetApplications(mime));
+        }
+        catch (Exception ex) { await ShowMessageAsync("Open With", ex.Message); return; }
+
+        var store = new OpenWithAssociationStore();
+        var customIds = store.Get(mime);
+        var hiddenIds = store.GetHidden(mime);
+        const string customPrefix = "exec:";
+        bool IsCustomExecutable(DesktopApplication app) => app.DesktopId.StartsWith(customPrefix, StringComparison.Ordinal);
+        DesktopApplication[] AllApplications() => apps.Concat(customIds.Concat(hiddenIds).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(id => id.StartsWith(customPrefix, StringComparison.Ordinal))
+            .Select(id => id[customPrefix.Length..])
+            .Where(File.Exists)
+            .Select(executable => new DesktopApplication(customPrefix + executable,
+                (store.GetApplicationName(executable) ?? LinuxApplicationRegistry.GetExecutableDisplayName(executable)), false, false)))
+            .GroupBy(app => app.DesktopId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .Select(app => new DesktopApplication(app.DesktopId,
+                store.GetDisplayName(IsCustomExecutable(app) ? app.DesktopId[customPrefix.Length..] : app.DesktopId)
+                ?? app.Name, app.Recommended, app.IsDefault))
+            .ToArray();
+        DesktopApplication[] known = Array.Empty<DesktopApplication>();
+        DesktopApplication[] others = Array.Empty<DesktopApplication>();
+        void RebuildLists()
+        {
+            known = AllApplications().Where(a => !hiddenIds.Contains(a.DesktopId) &&
+                (a.Recommended || customIds.Contains(a.DesktopId)))
+                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+            others = AllApplications().Where(a => hiddenIds.Contains(a.DesktopId) ||
+                (!a.Recommended && !customIds.Contains(a.DesktopId)))
+                .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+        }
+        RebuildLists();
+        var showAll = new CheckBox { Content = "Show all installed applications" };
+        var knownHeader = new TextBlock { FontWeight = Avalonia.Media.FontWeight.SemiBold };
+        var othersHeader = new TextBlock { FontWeight = Avalonia.Media.FontWeight.SemiBold, Text = "All other installed applications" };
+        var knownList = new ListBox
+        {
+            SelectionMode = SelectionMode.Single,
+            MinHeight = 70,
+            MaxHeight = 210,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<DesktopApplication>((app, _) =>
+            {
+                var label = new TextBlock { Text = app?.DisplayName ?? string.Empty, Margin = new Thickness(5, 3) };
+                if (app is not null)
+                    ToolTip.SetTip(label, IsCustomExecutable(app) ? app.DesktopId[customPrefix.Length..] : app.DesktopId);
+                return label;
+            }, true)
+        };
+        var otherList = new ListBox
+        {
+            SelectionMode = SelectionMode.Single,
+            MinHeight = 70,
+            MaxHeight = 210,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<DesktopApplication>((app, _) =>
+            {
+                var label = new TextBlock { Text = app?.DisplayName ?? string.Empty, Margin = new Thickness(5, 3) };
+                if (app is not null)
+                    ToolTip.SetTip(label, IsCustomExecutable(app) ? app.DesktopId[customPrefix.Length..] : app.DesktopId);
+                return label;
+            }, true)
+        };
+        // Each application list has its own ScrollViewer, nested inside the dialog's
+        // outer ScrollViewer. Route wheel events to the list beneath the pointer
+        // first, so a long list scrolls without moving the entire dialog.
+        void ScrollApplicationList(object? sender, PointerWheelEventArgs e)
+        {
+            if (sender is not ListBox list || e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+            var scroller = list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+            if (scroller is null) return;
+
+            var wheel = e.Delta.Y;
+            if (wheel == 0) return;
+            var maxOffset = Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height);
+            var newOffset = Math.Clamp(scroller.Offset.Y - wheel * 48, 0, maxOffset);
+            if (Math.Abs(newOffset - scroller.Offset.Y) < 0.01) return;
+
+            scroller.Offset = new Vector(scroller.Offset.X, newOffset);
+            e.Handled = true;
+        }
+        knownList.AddHandler(PointerWheelChangedEvent, ScrollApplicationList,
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+        otherList.AddHandler(PointerWheelChangedEvent, ScrollApplicationList,
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        var addApp = new Button { Content = "Add selected to list" };
+        var addExecutable = new Button { Content = "Add executable to list" };
+        var removeApp = new Button { Content = "Remove from list" };
+        var editName = new Button { Content = "Edit display name" };
+        DesktopApplication? SelectedApp() => knownList.SelectedItem as DesktopApplication
+            ?? otherList.SelectedItem as DesktopApplication;
+        void UpdateActions()
+        {
+            var app = SelectedApp();
+            addApp.IsEnabled = app is not null &&
+                (hiddenIds.Contains(app.DesktopId) || (!app.Recommended && !customIds.Contains(app.DesktopId)));
+            removeApp.IsEnabled = app is not null && !hiddenIds.Contains(app.DesktopId);
+            editName.IsEnabled = app is not null;
+        }
+        void RefreshApplicationChoices(string? selectId = null)
+        {
+            RebuildLists();
+            knownHeader.Text = $"Known applications for this file type ({known.Length})";
+            knownList.ItemsSource = known;
+            otherList.ItemsSource = showAll.IsChecked == true ? others : Array.Empty<DesktopApplication>();
+            othersHeader.IsVisible = otherList.IsVisible = showAll.IsChecked == true;
+            knownList.SelectedItem = known.FirstOrDefault(a => a.DesktopId == selectId);
+            otherList.SelectedItem = showAll.IsChecked == true ? others.FirstOrDefault(a => a.DesktopId == selectId) : null;
+            if (SelectedApp() is null && known.Length > 0 && selectId is null) knownList.SelectedIndex = 0;
+            UpdateActions();
+        }
+        knownList.SelectionChanged += (_, _) =>
+        {
+            if (knownList.SelectedItem is not null) otherList.SelectedItem = null;
+            UpdateActions();
+        };
+        otherList.SelectionChanged += (_, _) =>
+        {
+            if (otherList.SelectedItem is not null) knownList.SelectedItem = null;
+            UpdateActions();
+        };
+        showAll.IsCheckedChanged += (_, _) => RefreshApplicationChoices(SelectedApp()?.DesktopId);
+        addApp.Click += async (_, _) =>
+        {
+            if (SelectedApp() is not { } app) return;
+            try
+            {
+                store.Unhide(mime, app.DesktopId);
+                store.Add(mime, app.DesktopId);
+                customIds = store.Get(mime);
+                hiddenIds = store.GetHidden(mime);
+                RefreshApplicationChoices(app.DesktopId);
+            }
+            catch (Exception ex) { await ShowMessageAsync("Add application failed", ex.Message); }
+        };
+        removeApp.Click += async (_, _) =>
+        {
+            if (SelectedApp() is not { } app) return;
+            try
+            {
+                store.Remove(mime, app.DesktopId);
+                store.Hide(mime, app.DesktopId);
+                customIds = store.Get(mime);
+                hiddenIds = store.GetHidden(mime);
+                // Hide the entry only in filepilot; never modify system MIME associations.
+                RefreshApplicationChoices();
+            }
+            catch (Exception ex) { await ShowMessageAsync("Remove application failed", ex.Message); }
+        };
+        // Edit names in-place. A second modal Window could appear behind the
+        // Open With window under some Linux/X11 window managers.
+        var nameEditor = new StackPanel { Spacing = 8, IsVisible = false };
+        var editingPath = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        var editingName = new TextBox { PlaceholderText = "Friendly application name", MinWidth = 260 };
+        var saveName = new Button { Content = "Save name" };
+        var resetName = new Button { Content = "Use system name" };
+        var cancelName = new Button { Content = "Cancel" };
+        nameEditor.Children.Add(new TextBlock
+        {
+            Text = "Application display name",
+            FontWeight = Avalonia.Media.FontWeight.SemiBold
+        });
+        nameEditor.Children.Add(editingPath);
+        nameEditor.Children.Add(editingName);
+        nameEditor.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children = { saveName, resetName, cancelName }
+        });
+        string? editingKey = null;
+        string? editingAppId = null;
+        void CloseNameEditor()
+        {
+            nameEditor.IsVisible = false;
+            editingKey = null;
+            editingAppId = null;
+            editName.IsEnabled = SelectedApp() is not null;
+        }
+        editName.Click += (_, _) =>
+        {
+            if (SelectedApp() is not { } selected) return;
+            editingAppId = selected.DesktopId;
+            editingKey = IsCustomExecutable(selected)
+                ? selected.DesktopId[customPrefix.Length..] : selected.DesktopId;
+            editingPath.Text = editingKey;
+            editingName.Text = store.GetDisplayName(editingKey) ?? selected.Name;
+            nameEditor.IsVisible = true;
+            editName.IsEnabled = false;
+            // Focus after layout has made the docked editor visible.
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                editingName.Focus();
+                editingName.SelectAll();
+            }, Avalonia.Threading.DispatcherPriority.Input);
+        };
+        async Task CommitNameAsync(bool reset)
+        {
+            if (editingKey is null || editingAppId is null) return;
+            try
+            {
+                store.SetDisplayName(editingKey, reset ? null : editingName.Text);
+                var appId = editingAppId;
+                CloseNameEditor();
+                RefreshApplicationChoices(appId);
+            }
+            catch (Exception ex)
+            {
+                // Keep the editor visible so the user can retry.
+                await ShowMessageAsync("Rename application failed", ex.Message);
+            }
+        }
+        saveName.Click += async (_, _) => await CommitNameAsync(false);
+        resetName.Click += async (_, _) => await CommitNameAsync(true);
+        cancelName.Click += (_, _) => CloseNameEditor();
+        editingName.KeyDown += async (_, e) =>
+        {
+            if (e.Key == Key.Enter) { e.Handled = true; await CommitNameAsync(false); }
+            else if (e.Key == Key.Escape) { e.Handled = true; CloseNameEditor(); }
+        };
+        RefreshApplicationChoices();
+        var manualBox = new TextBox { PlaceholderText = "Executable path (e.g. /usr/bin/code)", MinWidth = 350 };
+        addExecutable.IsEnabled = false;
+        addExecutable.Click += async (_, _) =>
+        {
+            var executable = manualBox.Text?.Trim() ?? string.Empty;
+            if (!Path.IsPathFullyQualified(executable) || !File.Exists(executable))
+            {
+                await ShowMessageAsync("Add application", "Enter the full path to an existing executable, such as /usr/bin/code.");
+                return;
+            }
+            try
+            {
+                var id = customPrefix + Path.GetFullPath(executable);
+                store.Add(mime, id);
+                customIds = store.Get(mime);
+                RefreshApplicationChoices(id);
+                manualBox.Text = string.Empty;
+            }
+            catch (Exception ex) { await ShowMessageAsync("Add application failed", ex.Message); }
+        };
+        var setDefault = new CheckBox { Content = "Always use selected application for this file type" };
+        void UpdateDefaultChoice()
+        {
+            setDefault.IsEnabled = string.IsNullOrWhiteSpace(manualBox.Text) && SelectedApp() is not null;
+            setDefault.IsChecked = setDefault.IsEnabled &&
+                SelectedApp() is { } candidate &&
+                string.Equals(store.GetPreferred(mime), candidate.DesktopId, StringComparison.OrdinalIgnoreCase);
+        }
+        knownList.SelectionChanged += (_, _) => UpdateDefaultChoice();
+        otherList.SelectionChanged += (_, _) => UpdateDefaultChoice();
+        UpdateDefaultChoice();
+        var dialog = new Window
+        {
+            Title = $"Open With: {Path.GetFileName(path)}", Width = 650, Height = 630,
+            MinWidth = 500, MinHeight = 490,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var open = new Button { Content = "Open", IsDefault = true };
+        var useDefault = new Button { Content = "Use Default" };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
         open.Click += (_, _) => dialog.Close(1);
-        defaultApp.Click += (_, _) => dialog.Close(2);
+        useDefault.Click += (_, _) => dialog.Close(2);
         cancel.Click += (_, _) => dialog.Close(0);
-        dialog.Content = new StackPanel { Margin = new Thickness(16), Spacing = 12,
-            Children = { new TextBlock { Text = "Choose a program to open this file. The file is passed as one argument." },
-                appBox, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
-                    Children = { open, defaultApp, cancel } } } };
+        knownList.DoubleTapped += (_, _) => { if (SelectedApp() is not null) dialog.Close(1); };
+        otherList.DoubleTapped += (_, _) => { if (SelectedApp() is not null) dialog.Close(1); };
+        manualBox.TextChanged += (_, _) =>
+        {
+            addExecutable.IsEnabled = !string.IsNullOrWhiteSpace(manualBox.Text);
+            setDefault.IsEnabled = string.IsNullOrWhiteSpace(manualBox.Text) && SelectedApp() is not null;
+        };
+        var container = new DockPanel { Margin = new Thickness(16), LastChildFill = true };
+        var bottom = new StackPanel { Spacing = 9 };
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        // Keep the name editor outside the scrollable application list.
+        // The previous inline editor was inserted below the list and could be
+        // invisible until the user scrolled down; this dock keeps it in view.
+        bottom.Children.Add(nameEditor);
+        bottom.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children = { manualBox, addExecutable }
+        });
+        bottom.Children.Add(setDefault);
+        bottom.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { useDefault, cancel, open }
+        });
+        container.Children.Add(bottom);
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(new TextBlock { Text = $"File type: {mime}" });
+        content.Children.Add(knownHeader);
+        content.Children.Add(knownList);
+        content.Children.Add(showAll);
+        content.Children.Add(othersHeader);
+        content.Children.Add(otherList);
+        content.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children = { addApp, removeApp, editName }
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "Remove from list hides an application in filepilot for this file type, without changing Linux MIME associations. Use Show all to restore hidden apps. Edit display name changes the name across file types.",
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+        if (known.Length == 0)
+            content.Children.Add(new TextBlock { Text = "No known applications. Select Show all, choose a program, and click Add to list.", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        container.Children.Add(new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        dialog.Content = container;
+
         var choice = await dialog.ShowDialog<int>(this);
         if (choice == 0) return;
         try
         {
-            if (choice == 2) _launcher.OpenWith("xdg-open", path);
-            else _launcher.OpenWith(appBox.Text ?? "", path);
+            if (choice == 2) { _launcher.OpenWith("xdg-open", path); return; }
+            if (!string.IsNullOrWhiteSpace(manualBox.Text))
+            {
+                _launcher.OpenWith(manualBox.Text.Trim(), path);
+                return;
+            }
+            if (SelectedApp() is not DesktopApplication selected)
+                throw new InvalidOperationException("Select an application or enter an executable.");
+            if (setDefault.IsChecked == true)
+            {
+                if (IsCustomExecutable(selected))
+                    store.SetPreferred(mime, selected.DesktopId);
+                else
+                {
+                    registry.SetDefault(selected, mime);
+                    // A previous filepilot-only preference must not override the new Linux default.
+                    store.SetPreferred(mime, null);
+                }
+            }
+            if (IsCustomExecutable(selected))
+                _launcher.OpenWith(selected.DesktopId[customPrefix.Length..], path);
+            else
+                registry.Launch(selected, path);
         }
         catch (Exception ex) { await ShowMessageAsync("Open With failed", ex.Message); }
     }
@@ -878,7 +1364,7 @@ public partial class MainWindow : Window
     }
     private async void Files_Tapped(object? sender, TappedEventArgs e)
     {
-        if (_settings.ClickMode != "Single" || _dragging) return;
+        if (_settings.ClickMode != "Single" || _dragging || _suppressSingleClickOpen) return;
         var item = (e.Source as Avalonia.Visual)?.FindAncestorOfType<ListBoxItem>();
         if (item?.DataContext is FileViewItem entry) await OpenPathAsync(entry.Entry.FullPath);
     }
@@ -927,7 +1413,12 @@ public partial class MainWindow : Window
     private void RefreshShortcuts()
     {
         var defaults = new[] { Home, Path.Combine(Home, "Downloads"), Path.Combine(Home, "Documents") };
-        _shortcuts = defaults.Concat(_settings.Shortcuts).Where(Directory.Exists).Distinct().ToArray();
+        _shortcuts = defaults.Concat(_settings.Shortcuts)
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         ShortcutsList.ItemsSource = _shortcuts;
     }
     private string[] _shortcuts = Array.Empty<string>();
@@ -1031,7 +1522,7 @@ public partial class MainWindow : Window
 
     private async void Settings_Click(object? sender, RoutedEventArgs e)
     {
-        var dialog = new SettingsWindow(_settings, _store);
+        var dialog = new SettingsWindow(_settings, _store, SetAutoRefresh);
         await dialog.ShowDialog(this);
     }
 }

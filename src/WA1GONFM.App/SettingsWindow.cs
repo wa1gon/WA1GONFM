@@ -1,7 +1,7 @@
 namespace WA1GONFM.App;
 public sealed class SettingsWindow : Window
 {
-    public SettingsWindow(AppSettings settings, SettingsStore store)
+    public SettingsWindow(AppSettings settings, SettingsStore store, Action<bool>? autoRefreshChanged = null)
     {
         Title = "filepilot Settings";
         Width = 540; Height = 465;
@@ -35,6 +35,12 @@ public sealed class SettingsWindow : Window
             store.Save(settings);
             Close();
         };
+        var autoRefresh = new CheckBox { Content = "Automatically refresh when files change", IsChecked = settings.AutoRefresh };
+        autoRefresh.IsCheckedChanged += (_, _) =>
+        {
+            if (autoRefreshChanged is not null) autoRefreshChanged(autoRefresh.IsChecked == true);
+            else { settings.AutoRefresh = autoRefresh.IsChecked == true; store.Save(settings); }
+        };
         var confirmMove = new CheckBox { Content = "Confirm moving files", IsChecked = settings.ConfirmMove };
         var confirmOverwrite = new CheckBox { Content = "Confirm overwriting existing files", IsChecked = settings.ConfirmOverwrite };
         var confirmTrash = new CheckBox { Content = "Confirm moving to Trash", IsChecked = settings.ConfirmTrash };
@@ -48,6 +54,7 @@ public sealed class SettingsWindow : Window
             new TextBlock { Text = "Theme (System follows desktop preference)" }, theme,
             new TextBlock { Text = "Default file view (new tabs)" }, defaultView,
             new TextBlock { Text = "Open files and folders with" }, clickMode,
+            autoRefresh,
             new TextBlock { Text = "Confirmations", FontWeight = Avalonia.Media.FontWeight.Bold },
             confirmMove, confirmOverwrite, confirmTrash, confirmPermanent,
             new TextBlock { Text = "Preferred terminal executable" }, executable,
